@@ -230,8 +230,8 @@ def process_block(
             # 3. 保存检测 JSON（含受害者身份）
             save_detection(r, chain, victim_info)
 
-            # 4. 公共广播（ntfy + Telegram 频道）
-            notifier.send(r)
+            # 4. 公共广播（ntfy + Telegram 频道，带双语卡片+诊断报告按钮）
+            notifier.send(r, report_url)
 
             # 5. 订阅者定向通知
             if r.victim_address:

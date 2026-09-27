@@ -74,54 +74,85 @@ class TelegramNotifier:
         return self.get_native_price_usd(symbol)
 
     def format_report(self, report: SandwichReport, eth_price_usd: float = 0.0) -> str:
-        """将诊断报告格式化为 Telegram 可读文本"""
+        """将诊断报告格式化为中英双语对照文本"""
         profit = report.attacker_profit_native
         loss = report.victim_loss_native
         profit_usd = profit * eth_price_usd if eth_price_usd else 0
         loss_usd = loss * eth_price_usd if eth_price_usd else 0
 
-        chain_name = "以太坊" if report.chain == "ethereum" else "币安智能链"
+        if report.chain == "ethereum":
+            chain_cn, chain_en = "以太坊", "Ethereum"
+        else:
+            chain_cn, chain_en = "币安智能链", "BSC"
         scan = report.scan_url
 
-        lines = [
-            "🚨 *MEV 夹子攻击预警* 🚨",
-            "",
-            f"📦 区块：`#{report.block_number}`",
-            f"🔗 网络：{chain_name}",
-            "",
-            f"👤 受害者：`{report.victim_tx[:10]}...{report.victim_tx[-6:]}`",
-            f"🕵️ 攻击者：`{report.attacker[:10]}...{report.attacker[-6:]}`",
-            f"💱 代币：{report.token_symbol}（{report.token_amount} 枚）",
-            "",
-            f"💰 攻击者获利：*_{profit:.6f} {report.native_symbol}_*",
-        ]
+        # 受害者显示：优先用地址，有 ENS 则附加
+        victim_display = report.victim_address or report.victim_tx[:10] + "..."
+        if len(victim_display) == 42:
+            victim_short = f"{victim_display[:10]}...{victim_display[-6:]}"
+        else:
+            victim_short = victim_display
+
+        attacker_short = f"{report.attacker[:10]}...{report.attacker[-6:]}"
+
+        # 利润/损失行
+        profit_line = f"*_{profit:.6f} {report.native_symbol}_*"
         if profit_usd:
-            lines.append(f"   ≈ ${profit_usd:,.2f} USD")
-        lines.append(f"📉 受害者损失：*_{loss:.6f} {report.native_symbol}_*")
+            profit_line += f"  ≈ ${profit_usd:,.2f}"
+        loss_line = f"*_{loss:.6f} {report.native_symbol}_*"
         if loss_usd:
-            lines.append(f"   ≈ ${loss_usd:,.2f} USD")
-        lines += [
+            loss_line += f"  ≈ ${loss_usd:,.2f}"
+
+        lines = [
+            "🚨 *MEV 夹子攻击预警 / Sandwich Attack Alert* 🚨",
             "",
-            "⚠️ *原因分析*",
-            "滑点设置过高，交易在公共内存池中暴露，",
-            "被 MEV Bot 前跑+后跑夹取利差。",
+            f"📦 区块 / Block: `#{report.block_number}`",
+            f"🔗 网络 / Network: {chain_cn} / {chain_en}",
             "",
-            "🛡️ *建议*",
-            "1. 使用 MEV-Share / Flashbots Protect 等隐私池",
-            "2. 调低滑点容忍度（建议 < 0.5%）",
-            "3. 大额交易拆分多笔执行",
+            f"👤 受害者 / Victim: `{victim_short}`",
+            f"🕵️ 攻击者 / Attacker: `{attacker_short}`",
+            f"💱 代币 / Token: {report.token_symbol} ({report.token_amount:,.2f})",
             "",
-            f"[查看受害者交易]({scan}/tx/{report.victim_tx})",
-            f"[查看攻击者地址]({scan}/address/{report.attacker})",
+            f"💰 攻击者获利 / Attacker Profit: {profit_line}",
+            f"📉 受害者损失 / Victim Loss: {loss_line}",
+            "",
+            "⚠️ *被夹原因 / Root Cause*",
+            "• 滑点设置过高 / Slippage tolerance set too high",
+            "• 交易在公共内存池暴露 / Tx exposed in public mempool",
+            "• 被 MEV Bot 前跑+后跑 / Front-run & back-run by MEV bot",
+            "",
+            "🛡️ *防护建议 / Recommendations*",
+            "1. 使用 MEV-Share / Flashbots Protect 隐私池 | Use private mempool",
+            "2. 调低滑点 < 0.5% | Lower slippage tolerance",
+            "3. 大额拆分多笔 | Split large trades",
+            "",
+            f"[🔗 受害者交易 / Victim Tx]({scan}/tx/{report.victim_tx})",
+            f"[🕵️ 攻击者地址 / Attacker Addr]({scan}/address/{report.attacker})",
         ]
         return "\n".join(lines)
 
-    def send(self, report: SandwichReport) -> bool:
-        """发送一条诊断报告到 Telegram"""
+    def _build_inline_keyboard(self, report: SandwichReport,
+                               report_url: str = "") -> dict:
+        """构建 Telegram 内联键盘按钮（查看诊断报告）"""
+        buttons = []
+        if report_url:
+            buttons.append([{
+                "text": "📋 查看诊断报告 / View Report",
+                "url": report_url,
+            }])
+        buttons.append([{
+            "text": "🔗 受害者交易 / Victim Tx",
+            "url": f"{report.scan_url}/tx/{report.victim_tx}",
+        }])
+        return {"inline_keyboard": buttons} if buttons else {}
+
+    def send(self, report: SandwichReport, report_url: str = "") -> bool:
+        """发送双语诊断报告到 Telegram（带内联按钮）"""
         if not self.enabled:
             return False
         eth_price = self._get_native_price_usd(report.native_symbol)
         text = self.format_report(report, eth_price)
+        reply_markup = self._build_inline_keyboard(report, report_url)
 
         payload = {
             "chat_id": self.chat_id,
@@ -129,6 +160,8 @@ class TelegramNotifier:
             "parse_mode": "Markdown",
             "disable_web_page_preview": True,
         }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         try:
             resp = requests.post(self.api_url, json=payload, timeout=10,
@@ -184,18 +217,21 @@ class NtfyNotifier:
                  or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
         return {"http": proxy, "https": proxy} if proxy else None
 
-    def send(self, report: SandwichReport) -> bool:
+    def send(self, report: SandwichReport, report_url: str = "") -> bool:
         """发送诊断报告到 ntfy.sh"""
         if not self.enabled:
             return False
         eth_price = TelegramNotifier.get_native_price_usd(report.native_symbol)
         text = TelegramNotifier("", "").format_report(report, eth_price)
+        if report_url:
+            text += f"\n\n📋 查看诊断报告 / View Report:\n{report_url}"
 
         # 注意：HTTP headers 不能含非 ASCII 字符，标题用英文
         headers = {
             "Title": f"MEV Sandwich Alert #{report.block_number}",
             "Priority": "4",
             "Tags": "warning,rotating_light",
+            "Click": report_url,
         }
         try:
             resp = requests.post(self.url, data=text.encode("utf-8"),
@@ -235,11 +271,11 @@ class MultiNotifier:
         self.telegram = telegram
         self.ntfy = ntfy
 
-    def send(self, report: SandwichReport) -> None:
+    def send(self, report: SandwichReport, report_url: str = "") -> None:
         if self.telegram:
-            self.telegram.send(report)
+            self.telegram.send(report, report_url)
         if self.ntfy:
-            self.ntfy.send(report)
+            self.ntfy.send(report, report_url)
 
     def send_text(self, text: str) -> None:
         if self.telegram:
