@@ -63,7 +63,7 @@ class SubscriptionManager:
         """Subscribe to a wallet address. Returns a user-facing message."""
         address = address.strip().lower()
         if not address.startswith("0x") or len(address) != 42:
-            return f"❌ {t('en', 'subscription.invalid_address')} / {t('zh', 'subscription.invalid_address')}"
+            return f"❌ {t('en', 'subscription.invalid_address')}"
 
         created = datetime.now().isoformat()
         try:
@@ -75,7 +75,7 @@ class SubscriptionManager:
                     (str(chat_id), address, ens_name, created),
                 )
             label = f"{ens_name} ({address[:8]}...)" if ens_name else f"{address[:10]}..."
-            return f"✅ {t('zh', 'subscription.subscribed_prefix')} {label} / {t('en', 'subscription.subscribed')}"
+            return f"✅ {t('en', 'subscription.subscribed_prefix')} {label} — {t('en', 'subscription.subscribed')}"
         except Exception as e:
             logger.error("Subscription failed: %s", e)
             return f"❌ {t('en', 'subscription.subscribe_failed')}: {e}"
@@ -127,15 +127,12 @@ class SubscriptionManager:
             return [dict(r) for r in rows]
 
     def format_status(self, chat_id: str) -> str:
-        """Format subscription list for Bot command reply (bilingual)."""
+        """Format subscription list for Bot command reply."""
         subs = self.get_subscriptions(chat_id)
         if not subs:
-            return (f"📋 {t('zh', 'subscription.status_empty')} "
-                    f"/ {t('en', 'subscription.status_empty')}")
+            return f"📋 {t('en', 'subscription.status_empty')}"
 
-        lines = [f"📋 {t('zh', 'subscription.status_header')} "
-                 f"({t('en', 'subscription.status_header')}) "
-                 f"({len(subs)})\n"]
+        lines = [f"📋 {t('en', 'subscription.status_header')} ({len(subs)})\n"]
         for i, s in enumerate(subs, 1):
             addr = s["address"]
             label = s.get("ens_name") or f"{addr[:10]}...{addr[-6:]}"

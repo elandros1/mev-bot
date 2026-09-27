@@ -1,7 +1,7 @@
 """
 Internationalization (i18n) module.
 Loads locale JSON files and provides translation helpers.
-Bilingual card text is composed by combining zh + en strings.
+Currently English-only; the locale file is src/locales/en.json.
 """
 from __future__ import annotations
 
@@ -35,18 +35,6 @@ def t(lang: str, dotted_key: str) -> str:
         else:
             return dotted_key  # fallback: return the key itself
     return str(data)
-
-
-def bi(dotted_key: str, sep: str = " / ") -> str:
-    """Get a bilingual string (Chinese / English).
-
-    Example: bi("card.block_label") -> "区块 / Block"
-    """
-    zh = t("zh", dotted_key)
-    en = t("en", dotted_key)
-    if zh == en:
-        return zh
-    return f"{zh}{sep}{en}"
 
 
 def get_subscriber_message(lang: str, report, report_url: str) -> str:

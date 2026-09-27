@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 import requests
 from web3 import Web3
 
-from .i18n import t, bi
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -266,36 +266,34 @@ class VictimOutreach:
         report_url: str,
         report: Any,
     ) -> str:
-        """Generate a bilingual outreach message for the victim."""
+        """Generate an outreach message for the victim."""
         ens = victim_info.get("ens_name") or ""
         addr = victim_info["address"]
         label = f"{ens} ({addr[:10]}...)" if ens else f"{addr[:10]}...{addr[-6:]}"
 
         lines = [
-            f"📢 {t('zh', 'outreach.to')} {label} / {t('en', 'outreach.to')} {label}",
+            f"📢 {t('en', 'outreach.to')} {label}",
             "",
-            f"{t('zh', 'outreach.detected')}",
             f"{t('en', 'outreach.detected')}",
             "",
-            f"{t('zh', 'outreach.report_summary')} / {t('en', 'outreach.report_summary')}",
+            f"{t('en', 'outreach.report_summary')}",
             "",
-            f"🔗 {bi('outreach.tx')}: {report.victim_tx[:20]}...",
-            f"💰 {bi('outreach.estimated_loss')}: {report.victim_loss_native} {report.native_symbol}",
-            f"🕵️ {bi('outreach.attacker')}: {report.attacker[:20]}...",
+            f"🔗 {t('en', 'outreach.tx')}: {report.victim_tx[:20]}...",
+            f"💰 {t('en', 'outreach.estimated_loss')}: {report.victim_loss_native} {report.native_symbol}",
+            f"🕵️ {t('en', 'outreach.attacker')}: {report.attacker[:20]}...",
             "",
-            f"📋 {bi('outreach.full_report')}: {report_url}",
+            f"📋 {t('en', 'outreach.full_report')}: {report_url}",
             "",
-            f"{t('zh', 'outreach.recommendations')}",
             f"{t('en', 'outreach.recommendations')}",
-            f"1. {bi('outreach.rec_1')}",
-            f"2. {bi('outreach.rec_2')}",
-            f"3. {bi('outreach.rec_3')}",
+            f"1. {t('en', 'outreach.rec_1')}",
+            f"2. {t('en', 'outreach.rec_2')}",
+            f"3. {t('en', 'outreach.rec_3')}",
         ]
 
         socials = victim_info.get("social_accounts", [])
         if socials:
             lines.append("")
-            lines.append(f"📱 {bi('outreach.social_verified')}")
+            lines.append(f"📱 {t('en', 'outreach.social_verified')}")
             for s in socials:
                 lines.append(f"  - {s['platform']}: @{s.get('handle', '')}")
 

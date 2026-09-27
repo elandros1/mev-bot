@@ -1,8 +1,6 @@
 # MEV Sandwich Attack Detection & Victim Outreach Bot
 
-> [中文文档](./README_CN.md)
-
-A fully automated MEV sandwich attack detection system that monitors on-chain DEX swaps, identifies victims, and pushes bilingual diagnostic alerts via Telegram and ntfy — zero human intervention required.
+A fully automated MEV sandwich attack detection system that monitors on-chain DEX swaps, identifies victims, and pushes diagnostic alerts via Telegram and ntfy — zero human intervention required.
 
 ## Features
 
@@ -11,10 +9,9 @@ A fully automated MEV sandwich attack detection system that monitors on-chain DE
 - **Web3 Identity Resolution** — ENS reverse lookup + Farcaster/Lens social account discovery
 - **HTML Diagnostic Reports** — Auto-generated structured report cards with profit/loss analysis
 - **Multi-Channel Push** — Telegram Bot (with inline buttons + Deep Linking) and ntfy.sh
-- **Bilingual Alerts** — Chinese/English dual-language cards for global audiences
 - **Wallet Subscription** — `/watch <address>` zero-barrier self-service protection
 - **Deep Link Auto-Binding** — Group members click one button to auto-subscribe victim wallet
-- **i18n Architecture** — All user-facing strings extracted to JSON locale files (`src/locales/`)
+- **i18n Architecture** — All user-facing strings stored in a JSON locale file (`src/locales/en.json`)
 
 ## Architecture
 
@@ -97,17 +94,16 @@ python main.py &
 
 ## i18n Architecture
 
-All user-facing strings are stored in JSON locale files:
+All user-facing strings are stored in a JSON locale file:
 
 ```
 src/locales/
-├── en.json    # English strings
-└── zh.json    # Chinese strings
+└── en.json    # English strings
 ```
 
 The `src/i18n.py` module provides:
-- `t(lang, key)` — Get a single-language string
-- `bi(key)` — Get a bilingual "Chinese / English" combined string
+- `t(lang, key)` — Get a localized string by dotted key
+- `get_subscriber_message(lang, report, url)` — Build a subscriber alert message
 
 ## Project Structure
 
@@ -126,8 +122,7 @@ mev-bot/
 │   ├── victim_outreach.py      # ENS + Farcaster + Lens lookup
 │   ├── i18n.py                 # Internationalization module
 │   └── locales/
-│       ├── en.json             # English locale
-│       └── zh.json             # Chinese locale
+│       └── en.json             # English locale
 ├── reports/                    # Generated HTML reports
 ├── detections/                 # JSON detection records
 └── telegram-proxy-worker.js    # Cloudflare Worker proxy (optional)

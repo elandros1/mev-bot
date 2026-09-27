@@ -14,7 +14,7 @@ from typing import Optional
 import requests
 
 from .analyzer import SandwichReport
-from .i18n import t, bi
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -92,16 +92,16 @@ class TelegramNotifier:
         return self.get_native_price_usd(symbol)
 
     def format_report(self, report: SandwichReport, eth_price_usd: float = 0.0) -> str:
-        """Format a diagnostic report as bilingual (Chinese / English) text using i18n locale files."""
+        """Format a diagnostic report as text using i18n locale files."""
         profit = report.attacker_profit_native
         loss = report.victim_loss_native
         profit_usd = profit * eth_price_usd if eth_price_usd else 0
         loss_usd = loss * eth_price_usd if eth_price_usd else 0
 
         if report.chain == "ethereum":
-            chain_bi = bi("card.network_ethereum")
+            chain_bi = t("en", "card.network_ethereum")
         else:
-            chain_bi = bi("card.network_bsc")
+            chain_bi = t("en", "card.network_bsc")
         scan = report.scan_url
 
         # Victim display: prefer address, append ENS if available
@@ -122,30 +122,30 @@ class TelegramNotifier:
             loss_line += f"  ≈ ${loss_usd:,.2f}"
 
         lines = [
-            f"🚨 *{t('zh', 'card.alert_title')} / {t('en', 'card.alert_title')}* 🚨",
+            f"🚨 *{t('en', 'card.alert_title')}* 🚨",
             "",
-            f"📦 {bi('card.block_label')}: `#{report.block_number}`",
-            f"🔗 {bi('card.network_label')}: {chain_bi}",
+            f"📦 {t('en', 'card.block_label')}: `#{report.block_number}`",
+            f"🔗 {t('en', 'card.network_label')}: {chain_bi}",
             "",
-            f"👤 {bi('card.victim_label')}: `{victim_short}`",
-            f"🕵️ {bi('card.attacker_label')}: `{attacker_short}`",
-            f"💱 {bi('card.token_label')}: {report.token_symbol} ({report.token_amount:,.2f})",
+            f"👤 {t('en', 'card.victim_label')}: `{victim_short}`",
+            f"🕵️ {t('en', 'card.attacker_label')}: `{attacker_short}`",
+            f"💱 {t('en', 'card.token_label')}: {report.token_symbol} ({report.token_amount:,.2f})",
             "",
-            f"💰 {bi('card.profit_label')}: {profit_line}",
-            f"📉 {bi('card.loss_label')}: {loss_line}",
+            f"💰 {t('en', 'card.profit_label')}: {profit_line}",
+            f"📉 {t('en', 'card.loss_label')}: {loss_line}",
             "",
-            f"⚠️ *{bi('card.root_cause_title')}*",
-            f"• {bi('card.root_cause_1')}",
-            f"• {bi('card.root_cause_2')}",
-            f"• {bi('card.root_cause_3')}",
+            f"⚠️ *{t('en', 'card.root_cause_title')}*",
+            f"• {t('en', 'card.root_cause_1')}",
+            f"• {t('en', 'card.root_cause_2')}",
+            f"• {t('en', 'card.root_cause_3')}",
             "",
-            f"🛡️ *{bi('card.recommendations_title')}*",
-            f"1. {bi('card.rec_1')}",
-            f"2. {bi('card.rec_2')}",
-            f"3. {bi('card.rec_3')}",
+            f"🛡️ *{t('en', 'card.recommendations_title')}*",
+            f"1. {t('en', 'card.rec_1')}",
+            f"2. {t('en', 'card.rec_2')}",
+            f"3. {t('en', 'card.rec_3')}",
             "",
-            f"[🔗 {bi('card.victim_tx_link')}]({scan}/tx/{report.victim_tx})",
-            f"[🕵️ {bi('card.attacker_addr_link')}]({scan}/address/{report.attacker})",
+            f"[🔗 {t('en', 'card.victim_tx_link')}]({scan}/tx/{report.victim_tx})",
+            f"[🕵️ {t('en', 'card.attacker_addr_link')}]({scan}/address/{report.attacker})",
         ]
         return "\n".join(lines)
 
@@ -168,24 +168,24 @@ class TelegramNotifier:
                 f"?start=watch_{victim_addr}"
             )
             buttons.append([{
-                "text": f"🔔 {t('zh', 'buttons.watch_wallet')} / {t('en', 'buttons.watch_wallet')}",
+                "text": f"🔔 {t('en', 'buttons.watch_wallet')}",
                 "url": deep_link,
             }])
         elif report_url:
             # Fallback to report link if no bot_username
             buttons.append([{
-                "text": f"📋 {t('zh', 'buttons.view_report')} / {t('en', 'buttons.view_report')}",
+                "text": f"📋 {t('en', 'buttons.view_report')}",
                 "url": report_url,
             }])
 
         # Row 2: Etherscan links
         row2 = []
         row2.append({
-            "text": f"🔗 {bi('buttons.victim_tx')}",
+            "text": f"🔗 {t('en', 'buttons.victim_tx')}",
             "url": f"{report.scan_url}/tx/{report.victim_tx}",
         })
         row2.append({
-            "text": f"🕵️ {bi('buttons.attacker')}",
+            "text": f"🕵️ {t('en', 'buttons.attacker')}",
             "url": f"{report.scan_url}/address/{report.attacker}",
         })
         buttons.append(row2)
@@ -193,14 +193,14 @@ class TelegramNotifier:
         # Row 3: Protection guide (Deep Link to Bot DM, no param -> /help)
         if self.bot_username:
             buttons.append([{
-                "text": f"🛡️ {bi('buttons.protection_guide')}",
+                "text": f"🛡️ {t('en', 'buttons.protection_guide')}",
                 "url": f"https://t.me/{self.bot_username}?start=help",
             }])
 
         return {"inline_keyboard": buttons} if buttons else {}
 
     def send(self, report: SandwichReport, report_url: str = "") -> bool:
-        """Send bilingual diagnostic report to Telegram (with inline buttons)."""
+        """Send diagnostic report to Telegram (with inline buttons)."""
         if not self.enabled:
             return False
         eth_price = self._get_native_price_usd(report.native_symbol)
@@ -277,7 +277,7 @@ class NtfyNotifier:
         eth_price = TelegramNotifier.get_native_price_usd(report.native_symbol)
         text = TelegramNotifier("", "").format_report(report, eth_price)
         if report_url:
-            text += f"\n\n📋 {bi('buttons.view_report')}:\n{report_url}"
+            text += f"\n\n📋 {t('en', 'buttons.view_report')}:\n{report_url}"
 
         # Note: HTTP headers cannot contain non-ASCII; use English for title
         headers = {
@@ -436,7 +436,7 @@ class TelegramCommandHandler:
         elif cmd == "/stats":
             self._cmd_stats(chat_id)
         else:
-            self._reply(chat_id, f"❓ {bi('commands.unknown_command')}")
+            self._reply(chat_id, f"❓ {t('en', 'commands.unknown_command')}")
 
     def _reply(self, chat_id: str, text: str):
         url = f"{self.api_base}/bot{self.bot_token}/sendMessage"
@@ -456,16 +456,15 @@ class TelegramCommandHandler:
     # ------------------------------------------------------------------
     def _cmd_help(self, chat_id: str):
         text = (
-            f"🤖 *{t('zh', 'commands.help_title')} / {t('en', 'commands.help_title')}*\n\n"
-            f"*{t('zh', 'commands.help_commands')} / {t('en', 'commands.help_commands')}:*\n"
+            f"🤖 *{t('en', 'commands.help_title')}*\n\n"
+            f"*{t('en', 'commands.help_commands')}:*\n"
             f"{t('en', 'commands.help_watch')}\n"
             f"{t('en', 'commands.help_unwatch')}\n"
             f"{t('en', 'commands.help_status')}\n"
             f"{t('en', 'commands.help_stats')}\n"
             f"{t('en', 'commands.help_help')}\n\n"
-            f"*{t('zh', 'commands.help_how_it_works')} / {t('en', 'commands.help_how_it_works')}*\n"
-            f"{t('en', 'commands.help_description')}\n\n"
-            f"{t('zh', 'commands.help_description')}"
+            f"*{t('en', 'commands.help_how_it_works')}*\n"
+            f"{t('en', 'commands.help_description')}"
         )
         self._reply(chat_id, text)
 
@@ -476,7 +475,7 @@ class TelegramCommandHandler:
         reply = self.sub_manager.subscribe(str(chat_id), address, ens_name)
         self._reply(chat_id, reply)
         if deep_link:
-            self._reply(chat_id, f"🔔 {bi('commands.deep_link_onboarding')}")
+            self._reply(chat_id, f"🔔 {t('en', 'commands.deep_link_onboarding')}")
 
     def _cmd_unwatch(self, chat_id: str, address: str):
         reply = self.sub_manager.unsubscribe(str(chat_id), address)
@@ -490,8 +489,8 @@ class TelegramCommandHandler:
         attacks = self.sub_manager.get_stat("attacks_detected")
         subs = self.sub_manager.get_stat("total_subscriptions")
         text = (
-            f"📊 *{bi('commands.stats_title')}*\n\n"
-            f"{t('zh', 'commands.stats_attacks')} / {t('en', 'commands.stats_attacks')}: {attacks}\n"
-            f"{t('zh', 'commands.stats_subscriptions')} / {t('en', 'commands.stats_subscriptions')}: {subs}"
+            f"📊 *{t('en', 'commands.stats_title')}*\n\n"
+            f"{t('en', 'commands.stats_attacks')}: {attacks}\n"
+            f"{t('en', 'commands.stats_subscriptions')}: {subs}"
         )
         self._reply(chat_id, text)

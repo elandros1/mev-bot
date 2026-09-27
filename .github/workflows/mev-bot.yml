@@ -3,12 +3,12 @@ name: MEV Sandwich Bot (24/7)
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:        # Manual trigger
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360       # GitHub Actions 单任务上限 6h
+    timeout-minutes: 360       # GitHub Actions single job limit: 6h
 
     steps:
       - name: Checkout

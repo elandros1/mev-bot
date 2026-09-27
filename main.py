@@ -29,7 +29,7 @@ from src.tg_bot import (
 from src.report_generator import generate_report_html
 from src.subscription_manager import SubscriptionManager
 from src.victim_outreach import VictimOutreach
-from src.i18n import t, bi, get_subscriber_message
+from src.i18n import t, get_subscriber_message
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -253,9 +253,9 @@ def process_block(
                         if sub not in subs:  # Avoid duplicates
                             chat_id = sub["chat_id"]
                             msg = (
-                                f"🚨 *{t('zh', 'main.subscriber_ens_alert')}* "
+                                f"🚨 *{t('en', 'main.subscriber_ens_alert')}* "
                                 f"*{victim_info['ens_name']}*\n"
-                                f"{bi('main.subscriber_loss')}: "
+                                f"{t('en', 'main.subscriber_loss')}: "
                                 f"{r.victim_loss_native} {r.native_symbol}"
                             )
                             if notifier.telegram:
@@ -345,13 +345,13 @@ def run() -> None:
 
     # ---- Startup notification ----
     notifier.send_text(
-        f"🤖 *{t('zh', 'main.startup_title')} / {t('en', 'main.startup_title')}*\n"
-        f"{t('zh', 'main.startup_network')}\n"
+        f"🤖 *{t('en', 'main.startup_title')}*\n"
+        f"{t('en', 'main.startup_network')}\n"
         f"{t('en', 'main.startup_block')}: `#{w3.eth.block_number}`\n"
-        f"{bi('main.startup_channels')}: {', '.join(channels)}\n"
-        f"{t('zh', 'main.startup_outreach')}\n"
-        f"{t('zh', 'main.startup_subscriptions')}\n"
-        f"{bi('main.startup_report_service')}: {report_base_url}\n"
+        f"{t('en', 'main.startup_channels')}: {', '.join(channels)}\n"
+        f"{t('en', 'main.startup_outreach')}\n"
+        f"{t('en', 'main.startup_subscriptions')}\n"
+        f"{t('en', 'main.startup_report_service')}: {report_base_url}\n"
         f"{t('en', 'main.startup_listening')}"
     )
 

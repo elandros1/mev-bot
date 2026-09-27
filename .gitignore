@@ -6,10 +6,10 @@ dist/
 build/
 .eggs/
 
-# 环境 & 密钥
+# Environment & secrets
 .env
 *.db
 
-# 运行时生成的数据
+# Runtime-generated data
 detections/
 reports/

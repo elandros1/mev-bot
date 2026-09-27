@@ -1,18 +1,18 @@
 /**
- * Telegram Bot API 代理 Worker
+ * Telegram Bot API Proxy Worker
  * ============================
- * 部署到 Cloudflare Workers（免费），用于在无法直连 api.telegram.org 的环境中
- * 转发 Bot API 请求。
+ * Deploy to Cloudflare Workers (free) to forward Bot API requests in
+ * environments that cannot directly reach api.telegram.org.
  *
- * 部署步骤：
- * 1. 打开 https://workers.cloudflare.com 登录/注册 Cloudflare
- * 2. 点击 "Create a Worker"
- * 3. 将本文件全部内容粘贴到代码编辑器中
- * 4. 点击 "Deploy"
- * 5. 复制 Worker 的 URL（如 https://tg-proxy.your-name.workers.dev）
- * 6. 在项目 .env 中设置：TELEGRAM_API_BASE="https://tg-proxy.your-name.workers.dev"
+ * Deployment steps:
+ * 1. Open https://workers.cloudflare.com and sign in/register to Cloudflare
+ * 2. Click "Create a Worker"
+ * 3. Paste the entire contents of this file into the code editor
+ * 4. Click "Deploy"
+ * 5. Copy the Worker URL (e.g. https://tg-proxy.your-name.workers.dev)
+ * 6. In the project .env, set: TELEGRAM_API_BASE="https://tg-proxy.your-name.workers.dev"
  *
- * 注意：本 Worker 仅透传请求，不存储任何数据，Bot Token 安全。
+ * Note: This Worker only forwards requests and stores no data; the Bot Token is safe.
  */
 
 const TELEGRAM_API = "https://api.telegram.org";
@@ -21,7 +21,7 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // 健康检查
+    // Health check
     if (url.pathname === "/") {
       return new Response("Telegram Bot API Proxy is running.", {
         status: 200,
@@ -29,10 +29,10 @@ export default {
       });
     }
 
-    // 构造转发到 Telegram 的 URL
+    // Build the forwarded Telegram URL
     const targetUrl = TELEGRAM_API + url.pathname + url.search;
 
-    // 复制请求头（移除 host，其余透传）
+    // Copy request headers (drop host, pass the rest through)
     const headers = new Headers(request.headers);
     headers.delete("host");
 
@@ -45,7 +45,7 @@ export default {
 
     try {
       const response = await fetch(targetUrl, init);
-      // 复制响应头
+      // Copy response headers
       const respHeaders = new Headers(response.headers);
       respHeaders.set("Access-Control-Allow-Origin", "*");
       return new Response(response.body, {
