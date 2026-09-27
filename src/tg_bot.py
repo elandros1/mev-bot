@@ -30,6 +30,23 @@ class TelegramNotifier:
         self.api_base = api_base.rstrip("/")
         self.api_url = f"{self.api_base}/bot{self.bot_token}/sendMessage"
         self.enabled = bool(self.bot_token and self.chat_id)
+        self.bot_username = ""
+        # 启动时自动获取 Bot username（用于 Deep Linking）
+        if self.bot_token:
+            self._fetch_bot_username()
+
+    def _fetch_bot_username(self):
+        """通过 getMe API 获取 Bot 的 username"""
+        url = f"{self.api_base}/bot{self.bot_token}/getMe"
+        try:
+            resp = requests.post(url, json={}, timeout=10,
+                                 proxies=self._proxies())
+            if resp.status_code == 200 and resp.json().get("ok"):
+                self.bot_username = resp.json()["result"].get("username", "")
+                if self.bot_username:
+                    logger.info("Bot 身份: @%s", self.bot_username)
+        except Exception as e:
+            logger.debug("getMe 失败: %s", e)
 
     @staticmethod
     def _proxies() -> Optional[dict]:
@@ -133,17 +150,52 @@ class TelegramNotifier:
 
     def _build_inline_keyboard(self, report: SandwichReport,
                                report_url: str = "") -> dict:
-        """构建 Telegram 内联键盘按钮（查看诊断报告）"""
+        """构建 Telegram 内联键盘按钮
+
+        按钮布局：
+        Row 1: [📋 查看诊断报告 / View Report]  (Deep Link → 私信 Bot 自动 /watch)
+        Row 2: [🔗 受害者交易 / Victim Tx] [🕵️ 攻击者 / Attacker]
+        Row 3: [🛡️ 防夹指南 / MEV Protection]  (Deep Link → 私信 Bot)
+        """
         buttons = []
-        if report_url:
+
+        # Deep Link: 点击后跳转到 Bot 私信，自动触发 /start watch_<address>
+        victim_addr = report.victim_address or ""
+        if self.bot_username and victim_addr:
+            deep_link = (
+                f"https://t.me/{self.bot_username}"
+                f"?start=watch_{victim_addr}"
+            )
+            buttons.append([{
+                "text": "🔔 保护此钱包 / Watch This Wallet",
+                "url": deep_link,
+            }])
+        elif report_url:
+            # 无 bot_username 时回退到报告链接
             buttons.append([{
                 "text": "📋 查看诊断报告 / View Report",
                 "url": report_url,
             }])
-        buttons.append([{
+
+        # 第二行：Etherscan 链接
+        row2 = []
+        row2.append({
             "text": "🔗 受害者交易 / Victim Tx",
             "url": f"{report.scan_url}/tx/{report.victim_tx}",
-        }])
+        })
+        row2.append({
+            "text": "🕵️ 攻击者 / Attacker",
+            "url": f"{report.scan_url}/address/{report.attacker}",
+        })
+        buttons.append(row2)
+
+        # 第三行：防夹指南（Deep Link 到 Bot 私信，无参数 → 显示 /help）
+        if self.bot_username:
+            buttons.append([{
+                "text": "🛡️ 防夹指南 / MEV Protection Guide",
+                "url": f"https://t.me/{self.bot_username}?start=help",
+            }])
+
         return {"inline_keyboard": buttons} if buttons else {}
 
     def send(self, report: SandwichReport, report_url: str = "") -> bool:
@@ -300,6 +352,13 @@ class TelegramCommandHandler:
         self.ens_resolver = ens_resolver  # VictimOutreach instance
         self.offset = 0
         self.enabled = bool(bot_token)
+        self.bot_username = ""
+        # 启动时自动获取 Bot username（用于 Deep Linking）
+        if self.enabled:
+            info = self._api_call("getMe")
+            if info and info.get("ok"):
+                self.bot_username = info["result"].get("username", "")
+                logger.info("Bot 身份: @%s", self.bot_username)
 
     @staticmethod
     def _proxies() -> Optional[dict]:
@@ -352,7 +411,20 @@ class TelegramCommandHandler:
         cmd = parts[0].lower().split("@")[0]  # 去掉 @botname 后缀
         args = parts[1:]
 
-        if cmd == "/start" or cmd == "/help":
+        # Deep Linking: /start watch_<address> → 自动订阅
+        # Deep Linking: /start help → 显示帮助
+        if cmd == "/start" and args:
+            payload = args[0]
+            if payload.startswith("watch_"):
+                address = payload[6:]  # 去掉 "watch_" 前缀
+                if address:
+                    self._cmd_watch(chat_id, address, deep_link=True)
+                    return
+            elif payload == "help":
+                self._cmd_help(chat_id)
+                return
+            self._cmd_help(chat_id)
+        elif cmd == "/start" or cmd == "/help":
             self._cmd_help(chat_id)
         elif cmd == "/watch" and args:
             self._cmd_watch(chat_id, args[0])
@@ -397,12 +469,18 @@ class TelegramCommandHandler:
         )
         self._reply(chat_id, text)
 
-    def _cmd_watch(self, chat_id: str, address: str):
+    def _cmd_watch(self, chat_id: str, address: str, deep_link: bool = False):
         ens_name = None
         if self.ens_resolver:
             ens_name = self.ens_resolver.resolve_ens(address)
         reply = self.sub_manager.subscribe(str(chat_id), address, ens_name)
         self._reply(chat_id, reply)
+        if deep_link:
+            self._reply(chat_id,
+                "🔔 你已通过诊断报告卡片自动绑定，"
+                "后续该钱包遭遇夹子攻击时将自动推送告警。\n"
+                "发送 /status 查看订阅列表，"
+                "/unwatch <地址> 取消订阅。")
 
     def _cmd_unwatch(self, chat_id: str, address: str):
         reply = self.sub_manager.unsubscribe(str(chat_id), address)

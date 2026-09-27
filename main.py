@@ -347,6 +347,9 @@ def run() -> None:
             sub_manager=sub_manager,
             ens_resolver=outreach,
         )
+        # 复用 TelegramNotifier 获取的 bot_username（避免重复 API 调用）
+        if tg and tg.bot_username:
+            cmd_handler.bot_username = tg.bot_username
         start_telegram_command_poller(cmd_handler)
 
     # ---- 启动通知 ----
