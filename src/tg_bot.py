@@ -1,9 +1,9 @@
 """
-通知推送模块
-------------
-支持多渠道推送夹子攻击诊断报告：
-- Telegram Bot API（需配置 BOT_TOKEN / CHAT_ID）
-- ntfy.sh（免费、无需注册，仅需一个 topic 名称）
+Notification Push Module
+------------------------
+Supports multi-channel push of sandwich attack diagnostic reports:
+- Telegram Bot API (requires BOT_TOKEN / CHAT_ID)
+- ntfy.sh (free, no registration required, just a topic name)
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Optional
 import requests
 
 from .analyzer import SandwichReport
+from .i18n import t, bi
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ DEFAULT_API_BASE = "https://api.telegram.org"
 
 
 class TelegramNotifier:
-    """Telegram 消息推送器"""
+    """Telegram message pusher."""
 
     def __init__(self, bot_token: str, chat_id: str,
                  api_base: str = DEFAULT_API_BASE):
@@ -31,12 +32,12 @@ class TelegramNotifier:
         self.api_url = f"{self.api_base}/bot{self.bot_token}/sendMessage"
         self.enabled = bool(self.bot_token and self.chat_id)
         self.bot_username = ""
-        # 启动时自动获取 Bot username（用于 Deep Linking）
+        # Auto-fetch Bot username on init (for Deep Linking)
         if self.bot_token:
             self._fetch_bot_username()
 
     def _fetch_bot_username(self):
-        """通过 getMe API 获取 Bot 的 username"""
+        """Fetch Bot username via getMe API."""
         url = f"{self.api_base}/bot{self.bot_token}/getMe"
         try:
             resp = requests.post(url, json={}, timeout=10,
@@ -44,25 +45,25 @@ class TelegramNotifier:
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.bot_username = resp.json()["result"].get("username", "")
                 if self.bot_username:
-                    logger.info("Bot 身份: @%s", self.bot_username)
+                    logger.info("Bot identity: @%s", self.bot_username)
         except Exception as e:
-            logger.debug("getMe 失败: %s", e)
+            logger.debug("getMe failed: %s", e)
 
     @staticmethod
     def _proxies() -> Optional[dict]:
-        """读取环境变量中的 HTTP 代理配置"""
+        """Read HTTP proxy config from environment variables."""
         proxy = (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
                  or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
         return {"http": proxy, "https": proxy} if proxy else None
 
     @staticmethod
     def get_native_price_usd(symbol: str = "ETH") -> float:
-        """获取原生代币的 USD 价格（失败返回 0）"""
+        """Get native token USD price (returns 0 on failure)."""
         proxy = (os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
                  or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy"))
         proxies = {"http": proxy, "https": proxy} if proxy else None
 
-        # 尝试多个价格源（沙箱可能屏蔽部分 API）
+        # Try multiple price sources (sandbox may block some APIs)
         pair = "ETH_USDT" if symbol == "ETH" else "BNB_USDT"
         sources = [
             # Gate.io
@@ -82,28 +83,28 @@ class TelegramNotifier:
                 if resp.status_code == 200:
                     return parser(resp)
             except Exception as e:
-                logger.debug("价格源 %s 失败: %s", url.split('/')[2], e)
+                logger.debug("Price source %s failed: %s", url.split('/')[2], e)
                 continue
-        logger.warning("所有价格源均失败，无法获取 %s 价格", symbol)
+        logger.warning("All price sources failed, cannot get %s price", symbol)
         return 0.0
 
     def _get_native_price_usd(self, symbol: str = "ETH") -> float:
         return self.get_native_price_usd(symbol)
 
     def format_report(self, report: SandwichReport, eth_price_usd: float = 0.0) -> str:
-        """将诊断报告格式化为中英双语对照文本"""
+        """Format a diagnostic report as bilingual (Chinese / English) text using i18n locale files."""
         profit = report.attacker_profit_native
         loss = report.victim_loss_native
         profit_usd = profit * eth_price_usd if eth_price_usd else 0
         loss_usd = loss * eth_price_usd if eth_price_usd else 0
 
         if report.chain == "ethereum":
-            chain_cn, chain_en = "以太坊", "Ethereum"
+            chain_bi = bi("card.network_ethereum")
         else:
-            chain_cn, chain_en = "币安智能链", "BSC"
+            chain_bi = bi("card.network_bsc")
         scan = report.scan_url
 
-        # 受害者显示：优先用地址，有 ENS 则附加
+        # Victim display: prefer address, append ENS if available
         victim_display = report.victim_address or report.victim_tx[:10] + "..."
         if len(victim_display) == 42:
             victim_short = f"{victim_display[:10]}...{victim_display[-6:]}"
@@ -112,7 +113,7 @@ class TelegramNotifier:
 
         attacker_short = f"{report.attacker[:10]}...{report.attacker[-6:]}"
 
-        # 利润/损失行
+        # Profit / loss lines
         profit_line = f"*_{profit:.6f} {report.native_symbol}_*"
         if profit_usd:
             profit_line += f"  ≈ ${profit_usd:,.2f}"
@@ -121,45 +122,45 @@ class TelegramNotifier:
             loss_line += f"  ≈ ${loss_usd:,.2f}"
 
         lines = [
-            "🚨 *MEV 夹子攻击预警 / Sandwich Attack Alert* 🚨",
+            f"🚨 *{t('zh', 'card.alert_title')} / {t('en', 'card.alert_title')}* 🚨",
             "",
-            f"📦 区块 / Block: `#{report.block_number}`",
-            f"🔗 网络 / Network: {chain_cn} / {chain_en}",
+            f"📦 {bi('card.block_label')}: `#{report.block_number}`",
+            f"🔗 {bi('card.network_label')}: {chain_bi}",
             "",
-            f"👤 受害者 / Victim: `{victim_short}`",
-            f"🕵️ 攻击者 / Attacker: `{attacker_short}`",
-            f"💱 代币 / Token: {report.token_symbol} ({report.token_amount:,.2f})",
+            f"👤 {bi('card.victim_label')}: `{victim_short}`",
+            f"🕵️ {bi('card.attacker_label')}: `{attacker_short}`",
+            f"💱 {bi('card.token_label')}: {report.token_symbol} ({report.token_amount:,.2f})",
             "",
-            f"💰 攻击者获利 / Attacker Profit: {profit_line}",
-            f"📉 受害者损失 / Victim Loss: {loss_line}",
+            f"💰 {bi('card.profit_label')}: {profit_line}",
+            f"📉 {bi('card.loss_label')}: {loss_line}",
             "",
-            "⚠️ *被夹原因 / Root Cause*",
-            "• 滑点设置过高 / Slippage tolerance set too high",
-            "• 交易在公共内存池暴露 / Tx exposed in public mempool",
-            "• 被 MEV Bot 前跑+后跑 / Front-run & back-run by MEV bot",
+            f"⚠️ *{bi('card.root_cause_title')}*",
+            f"• {bi('card.root_cause_1')}",
+            f"• {bi('card.root_cause_2')}",
+            f"• {bi('card.root_cause_3')}",
             "",
-            "🛡️ *防护建议 / Recommendations*",
-            "1. 使用 MEV-Share / Flashbots Protect 隐私池 | Use private mempool",
-            "2. 调低滑点 < 0.5% | Lower slippage tolerance",
-            "3. 大额拆分多笔 | Split large trades",
+            f"🛡️ *{bi('card.recommendations_title')}*",
+            f"1. {bi('card.rec_1')}",
+            f"2. {bi('card.rec_2')}",
+            f"3. {bi('card.rec_3')}",
             "",
-            f"[🔗 受害者交易 / Victim Tx]({scan}/tx/{report.victim_tx})",
-            f"[🕵️ 攻击者地址 / Attacker Addr]({scan}/address/{report.attacker})",
+            f"[🔗 {bi('card.victim_tx_link')}]({scan}/tx/{report.victim_tx})",
+            f"[🕵️ {bi('card.attacker_addr_link')}]({scan}/address/{report.attacker})",
         ]
         return "\n".join(lines)
 
     def _build_inline_keyboard(self, report: SandwichReport,
                                report_url: str = "") -> dict:
-        """构建 Telegram 内联键盘按钮
+        """Build Telegram inline keyboard buttons.
 
-        按钮布局：
-        Row 1: [📋 查看诊断报告 / View Report]  (Deep Link → 私信 Bot 自动 /watch)
-        Row 2: [🔗 受害者交易 / Victim Tx] [🕵️ 攻击者 / Attacker]
-        Row 3: [🛡️ 防夹指南 / MEV Protection]  (Deep Link → 私信 Bot)
+        Button layout:
+        Row 1: [Watch This Wallet]  (Deep Link -> Bot DM auto /watch)
+        Row 2: [Victim Tx] [Attacker]
+        Row 3: [MEV Protection Guide]  (Deep Link -> Bot DM)
         """
         buttons = []
 
-        # Deep Link: 点击后跳转到 Bot 私信，自动触发 /start watch_<address>
+        # Deep Link: click to open Bot DM, auto-trigger /start watch_<address>
         victim_addr = report.victim_address or ""
         if self.bot_username and victim_addr:
             deep_link = (
@@ -167,39 +168,39 @@ class TelegramNotifier:
                 f"?start=watch_{victim_addr}"
             )
             buttons.append([{
-                "text": "🔔 保护此钱包 / Watch This Wallet",
+                "text": f"🔔 {t('zh', 'buttons.watch_wallet')} / {t('en', 'buttons.watch_wallet')}",
                 "url": deep_link,
             }])
         elif report_url:
-            # 无 bot_username 时回退到报告链接
+            # Fallback to report link if no bot_username
             buttons.append([{
-                "text": "📋 查看诊断报告 / View Report",
+                "text": f"📋 {t('zh', 'buttons.view_report')} / {t('en', 'buttons.view_report')}",
                 "url": report_url,
             }])
 
-        # 第二行：Etherscan 链接
+        # Row 2: Etherscan links
         row2 = []
         row2.append({
-            "text": "🔗 受害者交易 / Victim Tx",
+            "text": f"🔗 {bi('buttons.victim_tx')}",
             "url": f"{report.scan_url}/tx/{report.victim_tx}",
         })
         row2.append({
-            "text": "🕵️ 攻击者 / Attacker",
+            "text": f"🕵️ {bi('buttons.attacker')}",
             "url": f"{report.scan_url}/address/{report.attacker}",
         })
         buttons.append(row2)
 
-        # 第三行：防夹指南（Deep Link 到 Bot 私信，无参数 → 显示 /help）
+        # Row 3: Protection guide (Deep Link to Bot DM, no param -> /help)
         if self.bot_username:
             buttons.append([{
-                "text": "🛡️ 防夹指南 / MEV Protection Guide",
+                "text": f"🛡️ {bi('buttons.protection_guide')}",
                 "url": f"https://t.me/{self.bot_username}?start=help",
             }])
 
         return {"inline_keyboard": buttons} if buttons else {}
 
     def send(self, report: SandwichReport, report_url: str = "") -> bool:
-        """发送双语诊断报告到 Telegram（带内联按钮）"""
+        """Send bilingual diagnostic report to Telegram (with inline buttons)."""
         if not self.enabled:
             return False
         eth_price = self._get_native_price_usd(report.native_symbol)
@@ -219,23 +220,23 @@ class TelegramNotifier:
             resp = requests.post(self.api_url, json=payload, timeout=10,
                                  proxies=self._proxies())
             if resp.status_code == 200 and resp.json().get("ok"):
-                logger.info("Telegram 报告已发送 | 区块 #%s | 获利 %.4f %s",
+                logger.info("Telegram report sent | block #%s | profit %.4f %s",
                             report.block_number, report.attacker_profit_native,
                             report.native_symbol)
                 return True
             else:
-                logger.error("Telegram 发送失败: %s", resp.text[:300])
+                logger.error("Telegram send failed: %s", resp.text[:300])
                 return False
         except Exception as e:
-            logger.error("Telegram 发送异常: %s", e)
+            logger.error("Telegram send exception: %s", e)
             return False
 
     def send_text(self, text: str) -> bool:
-        """发送纯文本消息（用于启动/状态通知）"""
+        """Send a plain text message (for startup/status notifications)."""
         return self.send_to_chat(self.chat_id, text)
 
     def send_to_chat(self, chat_id: str, text: str) -> bool:
-        """发送消息到指定 chat_id（支持群聊/用户）"""
+        """Send a message to a specific chat_id (supports groups/users)."""
         if not self.bot_token:
             return False
         url = f"{self.api_base}/bot{self.bot_token}/sendMessage"
@@ -250,12 +251,12 @@ class TelegramNotifier:
                                  proxies=self._proxies())
             return resp.status_code == 200 and resp.json().get("ok", False)
         except Exception as e:
-            logger.error("Telegram send_to_chat 失败: %s", e)
+            logger.error("Telegram send_to_chat failed: %s", e)
             return False
 
 
 class NtfyNotifier:
-    """ntfy.sh 消息推送器（免费、无需注册）"""
+    """ntfy.sh message pusher (free, no registration required)."""
 
     def __init__(self, topic: str, server: str = "https://ntfy.sh"):
         self.topic = topic.strip()
@@ -270,15 +271,15 @@ class NtfyNotifier:
         return {"http": proxy, "https": proxy} if proxy else None
 
     def send(self, report: SandwichReport, report_url: str = "") -> bool:
-        """发送诊断报告到 ntfy.sh"""
+        """Send diagnostic report to ntfy.sh."""
         if not self.enabled:
             return False
         eth_price = TelegramNotifier.get_native_price_usd(report.native_symbol)
         text = TelegramNotifier("", "").format_report(report, eth_price)
         if report_url:
-            text += f"\n\n📋 查看诊断报告 / View Report:\n{report_url}"
+            text += f"\n\n📋 {bi('buttons.view_report')}:\n{report_url}"
 
-        # 注意：HTTP headers 不能含非 ASCII 字符，标题用英文
+        # Note: HTTP headers cannot contain non-ASCII; use English for title
         headers = {
             "Title": f"MEV Sandwich Alert #{report.block_number}",
             "Priority": "4",
@@ -290,18 +291,18 @@ class NtfyNotifier:
                                  headers=headers, timeout=10,
                                  proxies=self._proxies())
             if resp.status_code == 200:
-                logger.info("ntfy 报告已发送 | 区块 #%s | topic=%s",
+                logger.info("ntfy report sent | block #%s | topic=%s",
                             report.block_number, self.topic)
                 return True
             else:
-                logger.error("ntfy 发送失败: %s", resp.text[:300])
+                logger.error("ntfy send failed: %s", resp.text[:300])
                 return False
         except Exception as e:
-            logger.error("ntfy 发送异常: %s", e)
+            logger.error("ntfy send exception: %s", e)
             return False
 
     def send_text(self, text: str, title: str = "MEV Bot") -> bool:
-        """发送纯文本消息"""
+        """Send a plain text message."""
         if not self.enabled:
             return False
         headers = {"Title": title, "Priority": "3"}
@@ -311,12 +312,12 @@ class NtfyNotifier:
                                  proxies=self._proxies())
             return resp.status_code == 200
         except Exception as e:
-            logger.error("ntfy 文本发送失败: %s", e)
+            logger.error("ntfy text send failed: %s", e)
             return False
 
 
 class MultiNotifier:
-    """统一多渠道通知器：同时推送 Telegram + ntfy"""
+    """Unified multi-channel notifier: pushes to both Telegram and ntfy."""
 
     def __init__(self, telegram: Optional[TelegramNotifier] = None,
                  ntfy: Optional[NtfyNotifier] = None):
@@ -336,13 +337,13 @@ class MultiNotifier:
             self.ntfy.send_text(text)
 
     def send_to_chat(self, chat_id: str, text: str) -> None:
-        """发送消息到指定 chat_id（用于 Bot 命令回复）"""
+        """Send a message to a specific chat_id (for Bot command replies)."""
         if self.telegram:
             self.telegram.send_to_chat(chat_id, text)
 
 
 class TelegramCommandHandler:
-    """Telegram Bot 命令处理器（长轮询 getUpdates）"""
+    """Telegram Bot command handler (long-polling getUpdates)."""
 
     def __init__(self, bot_token: str, api_base: str,
                  sub_manager, ens_resolver=None):
@@ -353,12 +354,12 @@ class TelegramCommandHandler:
         self.offset = 0
         self.enabled = bool(bot_token)
         self.bot_username = ""
-        # 启动时自动获取 Bot username（用于 Deep Linking）
+        # Auto-fetch Bot username on init (for Deep Linking)
         if self.enabled:
             info = self._api_call("getMe")
             if info and info.get("ok"):
                 self.bot_username = info["result"].get("username", "")
-                logger.info("Bot 身份: @%s", self.bot_username)
+                logger.info("Bot identity: @%s", self.bot_username)
 
     @staticmethod
     def _proxies() -> Optional[dict]:
@@ -373,16 +374,16 @@ class TelegramCommandHandler:
                                  proxies=self._proxies())
             if resp.status_code == 200:
                 return resp.json()
-            logger.error("Telegram API %s 失败: %s", method, resp.text[:200])
+            logger.error("Telegram API %s failed: %s", method, resp.text[:200])
         except Exception as e:
-            logger.debug("Telegram API %s 异常: %s", method, e)
+            logger.debug("Telegram API %s exception: %s", method, e)
         return None
 
     def poll_once(self) -> list:
-        """长轮询一次 getUpdates，返回需处理的消息列表"""
+        """Long-poll getUpdates once, returning list of messages to handle."""
         result = self._api_call("getUpdates", {
             "offset": self.offset,
-            "timeout": 25,  # 长轮询超时
+            "timeout": 25,  # Long-poll timeout
             "allowed_updates": ["message"],
         })
         if not result or not result.get("ok"):
@@ -398,7 +399,7 @@ class TelegramCommandHandler:
         return handled
 
     def handle_message(self, msg: dict) -> None:
-        """处理单条消息：解析命令并回复"""
+        """Handle a single message: parse command and reply."""
         text = msg.get("text", "").strip()
         chat_id = msg["chat"]["id"]
         sender = msg.get("from", {})
@@ -408,15 +409,15 @@ class TelegramCommandHandler:
             return
 
         parts = text.split(maxsplit=2)
-        cmd = parts[0].lower().split("@")[0]  # 去掉 @botname 后缀
+        cmd = parts[0].lower().split("@")[0]  # Strip @botname suffix
         args = parts[1:]
 
-        # Deep Linking: /start watch_<address> → 自动订阅
-        # Deep Linking: /start help → 显示帮助
+        # Deep Linking: /start watch_<address> -> auto-subscribe
+        # Deep Linking: /start help -> show help
         if cmd == "/start" and args:
             payload = args[0]
             if payload.startswith("watch_"):
-                address = payload[6:]  # 去掉 "watch_" 前缀
+                address = payload[6:]  # Strip "watch_" prefix
                 if address:
                     self._cmd_watch(chat_id, address, deep_link=True)
                     return
@@ -435,7 +436,7 @@ class TelegramCommandHandler:
         elif cmd == "/stats":
             self._cmd_stats(chat_id)
         else:
-            self._reply(chat_id, "未知命令，发送 /help 查看帮助")
+            self._reply(chat_id, f"❓ {bi('commands.unknown_command')}")
 
     def _reply(self, chat_id: str, text: str):
         url = f"{self.api_base}/bot{self.bot_token}/sendMessage"
@@ -451,21 +452,20 @@ class TelegramCommandHandler:
             pass
 
     # ------------------------------------------------------------------
-    # 命令实现
+    # Command implementations
     # ------------------------------------------------------------------
     def _cmd_help(self, chat_id: str):
         text = (
-            "🤖 *MEV 夹子攻击防护 Bot*\n\n"
-            "*命令列表:*\n"
-            "/watch `<地址>` - 订阅钱包监控\n"
-            "/unwatch `<地址>` - 取消订阅\n"
-            "/status - 查看你的订阅列表\n"
-            "/stats - 查看全局统计\n"
-            "/help - 显示此帮助\n\n"
-            "*工作原理:*\n"
-            "Bot 实时监控链上交易，当检测到你订阅的钱包地址"
-            "遭遇 MEV 夹子攻击时，自动推送告警与诊断报告。\n\n"
-            "把此 Bot 拉入你的交易群即可使用，零门槛。"
+            f"🤖 *{t('zh', 'commands.help_title')} / {t('en', 'commands.help_title')}*\n\n"
+            f"*{t('zh', 'commands.help_commands')} / {t('en', 'commands.help_commands')}:*\n"
+            f"{t('en', 'commands.help_watch')}\n"
+            f"{t('en', 'commands.help_unwatch')}\n"
+            f"{t('en', 'commands.help_status')}\n"
+            f"{t('en', 'commands.help_stats')}\n"
+            f"{t('en', 'commands.help_help')}\n\n"
+            f"*{t('zh', 'commands.help_how_it_works')} / {t('en', 'commands.help_how_it_works')}*\n"
+            f"{t('en', 'commands.help_description')}\n\n"
+            f"{t('zh', 'commands.help_description')}"
         )
         self._reply(chat_id, text)
 
@@ -476,11 +476,7 @@ class TelegramCommandHandler:
         reply = self.sub_manager.subscribe(str(chat_id), address, ens_name)
         self._reply(chat_id, reply)
         if deep_link:
-            self._reply(chat_id,
-                "🔔 你已通过诊断报告卡片自动绑定，"
-                "后续该钱包遭遇夹子攻击时将自动推送告警。\n"
-                "发送 /status 查看订阅列表，"
-                "/unwatch <地址> 取消订阅。")
+            self._reply(chat_id, f"🔔 {bi('commands.deep_link_onboarding')}")
 
     def _cmd_unwatch(self, chat_id: str, address: str):
         reply = self.sub_manager.unsubscribe(str(chat_id), address)
@@ -494,8 +490,8 @@ class TelegramCommandHandler:
         attacks = self.sub_manager.get_stat("attacks_detected")
         subs = self.sub_manager.get_stat("total_subscriptions")
         text = (
-            f"📊 *全局统计*\n\n"
-            f"夹子攻击检测数: {attacks}\n"
-            f"总订阅数: {subs}"
+            f"📊 *{bi('commands.stats_title')}*\n\n"
+            f"{t('zh', 'commands.stats_attacks')} / {t('en', 'commands.stats_attacks')}: {attacks}\n"
+            f"{t('zh', 'commands.stats_subscriptions')} / {t('en', 'commands.stats_subscriptions')}: {subs}"
         )
         self._reply(chat_id, text)

@@ -1,11 +1,11 @@
 """
-钱包订阅管理器
---------------
-基于 SQLite 的轻量级订阅系统，支持：
-- /watch <address>  订阅钱包监控
-- /unwatch <address> 取消订阅
-- /status           查看订阅列表
-- 被动检测到该地址被夹时自动推送通知
+Wallet Subscription Manager
+--------------------------
+Lightweight SQLite-based subscription system supporting:
+- /watch <address>   Subscribe to wallet monitoring
+- /unwatch <address> Unsubscribe
+- /status            View subscription list
+- Passive auto-notification when a subscribed address is sandwiched
 """
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ import os
 import sqlite3
 from datetime import datetime
 from typing import List, Optional
+
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +26,14 @@ DB_PATH = os.path.join(
 
 
 class SubscriptionManager:
-    """钱包订阅管理器"""
+    """Wallet subscription manager."""
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._init_db()
 
     def _init_db(self):
-        """初始化数据库表"""
+        """Initialize database tables."""
         with self._conn() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -54,14 +56,14 @@ class SubscriptionManager:
         return sqlite3.connect(self.db_path)
 
     # ------------------------------------------------------------------
-    # 订阅 / 取消订阅
+    # Subscribe / Unsubscribe
     # ------------------------------------------------------------------
     def subscribe(self, chat_id: str, address: str,
                   ens_name: Optional[str] = None) -> str:
-        """订阅一个钱包地址，返回提示消息"""
+        """Subscribe to a wallet address. Returns a user-facing message."""
         address = address.strip().lower()
         if not address.startswith("0x") or len(address) != 42:
-            return "❌ 地址格式无效，请输入 0x 开头的 42 位钱包地址"
+            return f"❌ {t('en', 'subscription.invalid_address')} / {t('zh', 'subscription.invalid_address')}"
 
         created = datetime.now().isoformat()
         try:
@@ -73,13 +75,13 @@ class SubscriptionManager:
                     (str(chat_id), address, ens_name, created),
                 )
             label = f"{ens_name} ({address[:8]}...)" if ens_name else f"{address[:10]}..."
-            return f"✅ 已订阅 {label}，当该地址被夹时将自动推送告警"
+            return f"✅ {t('zh', 'subscription.subscribed_prefix')} {label} / {t('en', 'subscription.subscribed')}"
         except Exception as e:
-            logger.error("订阅失败: %s", e)
-            return f"❌ 订阅失败: {e}"
+            logger.error("Subscription failed: %s", e)
+            return f"❌ {t('en', 'subscription.subscribe_failed')}: {e}"
 
     def unsubscribe(self, chat_id: str, address: str) -> str:
-        """取消订阅"""
+        """Unsubscribe from a wallet address."""
         address = address.strip().lower()
         with self._conn() as conn:
             cur = conn.execute(
@@ -87,11 +89,11 @@ class SubscriptionManager:
                 (str(chat_id), address),
             )
             if cur.rowcount > 0:
-                return f"✅ 已取消订阅 {address[:10]}..."
-            return f"⚠️ 未找到 {address[:10]}... 的订阅记录"
+                return f"✅ {t('en', 'subscription.unsubscribed')} {address[:10]}..."
+            return f"⚠️ {t('en', 'subscription.not_found')}"
 
     def get_subscriptions(self, chat_id: str) -> List[dict]:
-        """获取某个聊天/群的所有订阅"""
+        """Get all subscriptions for a given chat/group."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -101,10 +103,10 @@ class SubscriptionManager:
             return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
-    # 被动检测：检查地址是否被订阅
+    # Passive detection: check if an address is subscribed
     # ------------------------------------------------------------------
     def find_subscribers(self, address: str) -> List[dict]:
-        """查找订阅了某个地址的所有 chat_id"""
+        """Find all chat_ids subscribed to a given address."""
         address = address.strip().lower()
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
@@ -115,7 +117,7 @@ class SubscriptionManager:
             return [dict(r) for r in rows]
 
     def find_subscribers_by_ens(self, ens_name: str) -> List[dict]:
-        """通过 ENS 名称查找订阅者"""
+        """Find subscribers by ENS name."""
         with self._conn() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -125,21 +127,24 @@ class SubscriptionManager:
             return [dict(r) for r in rows]
 
     def format_status(self, chat_id: str) -> str:
-        """格式化订阅列表用于 Bot 命令回复"""
+        """Format subscription list for Bot command reply (bilingual)."""
         subs = self.get_subscriptions(chat_id)
         if not subs:
-            return "📋 你还没有订阅任何钱包\n\n使用 /watch <地址> 订阅"
+            return (f"📋 {t('zh', 'subscription.status_empty')} "
+                    f"/ {t('en', 'subscription.status_empty')}")
 
-        lines = [f"📋 你的订阅列表（共 {len(subs)} 个）\n"]
+        lines = [f"📋 {t('zh', 'subscription.status_header')} "
+                 f"({t('en', 'subscription.status_header')}) "
+                 f"({len(subs)})\n"]
         for i, s in enumerate(subs, 1):
             addr = s["address"]
             label = s.get("ens_name") or f"{addr[:10]}...{addr[-6:]}"
             lines.append(f"{i}. {label}")
-        lines.append("\n使用 /unwatch <地址> 取消订阅")
+        lines.append(f"\n{t('en', 'subscription.status_footer')}")
         return "\n".join(lines)
 
     def increment_stat(self, key: str):
-        """递增统计计数器"""
+        """Increment a statistics counter."""
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO stats (key, value) VALUES (?, '1') "

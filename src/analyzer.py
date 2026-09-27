@@ -1,9 +1,9 @@
 """
-MEV 夹子攻击诊断模块
--------------------
-监听 Uniswap V2/V3 (及 Pancakeswap) 的 Swap 事件，
-在同一个区块内检测「前跑 Buy + 后跑 Sell」的夹子攻击模式，
-计算攻击者利润与受害者滑点损失。
+MEV Sandwich Attack Detection Module
+------------------------------------
+Monitors Uniswap V2/V3 (and Pancakeswap) Swap events,
+detects front-run Buy + back-run Sell patterns within the same block,
+and calculates attacker profit and victim slippage loss.
 """
 from __future__ import annotations
 
@@ -18,16 +18,16 @@ from web3.types import LogReceipt
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# 常量
+# Constants
 # ---------------------------------------------------------------------------
 WETH_ETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"   # Ethereum WETH
 WETH_BSC = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"   # BSC WBNB
 
-# 事件签名（运行时用 keccak 计算，避免硬编码错误）
+# Event signatures (computed via keccak at runtime to avoid hardcoding errors)
 V2_SWAP_SIG = "Swap(address,uint256,uint256,uint256,uint256,address)"
 V3_SWAP_SIG = "Swap(address,address,int256,int256,uint160,uint128,int24)"
 
-# 读取 pair/pool 代币信息的最小 ABI
+# Minimal ABI for reading pair/pool token info
 PAIR_ABI = [
     {"constant": True, "inputs": [], "name": "token0",
      "outputs": [{"name": "", "type": "address"}], "type": "function"},
@@ -44,48 +44,48 @@ ERC20_ABI = [
 
 
 # ---------------------------------------------------------------------------
-# 数据结构
+# Data Structures
 # ---------------------------------------------------------------------------
 @dataclass
 class SwapRecord:
-    """单笔 Swap 事件的解析结果"""
+    """Parsed result of a single Swap event."""
     tx_hash: str
     log_index: int
-    pair: str                 # 交易对/pool 地址
-    trader: str               # 接收输出代币的地址 (to / recipient)
-    token_in: str             # 输入代币地址
-    token_out: str            # 输出代币地址
-    amount_in: int            # 输入数量（最小单位）
-    amount_out: int           # 输出数量（最小单位）
-    is_buy: bool              # True = 用 WETH 买入目标代币
+    pair: str                 # Pair/pool address
+    trader: str               # Recipient of output token (to / recipient)
+    token_in: str             # Input token address
+    token_out: str            # Output token address
+    amount_in: int            # Input amount (smallest unit)
+    amount_out: int           # Output amount (smallest unit)
+    is_buy: bool              # True = buying target token with WETH
     version: int              # 2 = Uniswap V2, 3 = V3
 
 
 @dataclass
 class SandwichReport:
-    """夹子攻击诊断报告"""
+    """Sandwich attack diagnostic report."""
     block_number: int
     victim_tx: str
     attacker: str
     pair: str
     front_run_tx: str
     back_run_tx: str
-    attacker_profit_native: float   # 攻击者利润（ETH/BNB）
-    victim_loss_native: float       # 受害者预估损失（ETH/BNB）
+    attacker_profit_native: float   # Attacker profit (ETH/BNB)
+    victim_loss_native: float       # Estimated victim loss (ETH/BNB)
     token_symbol: str
-    token_amount: float             # 被夹交易涉及的代币数量
+    token_amount: float             # Token amount involved in the sandwiched trade
     native_symbol: str              # "ETH" / "BNB"
     chain: str                      # "ethereum" / "bsc"
-    scan_url: str = ""              # 区块浏览器链接前缀
-    victim_address: str = ""        # 受害者钱包地址（用于订阅匹配/触达）
-    token_address: str = ""         # 被夹代币合约地址
+    scan_url: str = ""              # Block explorer URL prefix
+    victim_address: str = ""        # Victim wallet address (for subscription matching / outreach)
+    token_address: str = ""         # Sandwiched token contract address
 
 
 # ---------------------------------------------------------------------------
-# 分析器
+# Analyzer
 # ---------------------------------------------------------------------------
 class MEVAnalyzer:
-    """链上夹子攻击分析器"""
+    """On-chain sandwich attack analyzer."""
 
     def __init__(self, w3: Web3, chain: str = "ethereum"):
         self.w3 = w3
@@ -93,13 +93,13 @@ class MEVAnalyzer:
         self.native_symbol = "ETH" if chain == "ethereum" else "BNB"
         self.weth = (WETH_ETH if chain == "ethereum" else WETH_BSC).lower()
 
-        # 计算事件 topic（keccak256），需带 0x 前缀
+        # Compute event topics via keccak256, with 0x prefix
         self.v2_swap_topic = Web3.to_hex(Web3.keccak(text=V2_SWAP_SIG))
         self.v3_swap_topic = Web3.to_hex(Web3.keccak(text=V3_SWAP_SIG))
 
-        # 缓存：pair -> (token0, token1)
+        # Cache: pair -> (token0, token1)
         self._pair_tokens: Dict[str, Tuple[str, str]] = {}
-        # 缓存：token -> (symbol, decimals)
+        # Cache: token -> (symbol, decimals)
         self._token_info: Dict[str, Tuple[str, int]] = {}
 
         self.scan_url = (
@@ -107,14 +107,14 @@ class MEVAnalyzer:
         )
 
     # ------------------------------------------------------------------
-    # 工具方法
+    # Utility methods
     # ------------------------------------------------------------------
     def _to_addr(self, topic_hex: str) -> str:
-        """从 32 字节 topic 中提取地址（去掉前导零）"""
+        """Extract an address from a 32-byte topic (strip leading zeros)."""
         return Web3.to_checksum_address("0x" + topic_hex[-40:])
 
     def _get_pair_tokens(self, pair: str) -> Tuple[str, str]:
-        """获取 pair 的 token0 / token1（带缓存）"""
+        """Fetch token0 / token1 for a pair (cached)."""
         key = pair.lower()
         if key in self._pair_tokens:
             return self._pair_tokens[key]
@@ -125,12 +125,12 @@ class MEVAnalyzer:
             t1 = contract.functions.token1().call()
             self._pair_tokens[key] = (t0.lower(), t1.lower())
         except Exception as e:
-            logger.debug("读取 pair 代币信息失败 %s: %s", pair, e)
+            logger.debug("Failed to read pair tokens for %s: %s", pair, e)
             self._pair_tokens[key] = ("", "")
         return self._pair_tokens[key]
 
     def _get_token_info(self, token: str) -> Tuple[str, int]:
-        """获取代币 symbol / decimals（带缓存）"""
+        """Fetch token symbol / decimals (cached)."""
         key = token.lower()
         if key in self._token_info:
             return self._token_info[key]
@@ -141,18 +141,18 @@ class MEVAnalyzer:
             decimals = contract.functions.decimals().call()
             self._token_info[key] = (str(symbol), int(decimals))
         except Exception as e:
-            logger.debug("读取代币信息失败 %s: %s", token, e)
+            logger.debug("Failed to read token info for %s: %s", token, e)
             self._token_info[key] = ("TOKEN", 18)
         return self._token_info[key]
 
     # ------------------------------------------------------------------
-    # 日志拉取与解析
+    # Log fetching and parsing
     # ------------------------------------------------------------------
     def fetch_swaps(self, block_number: int) -> List[SwapRecord]:
-        """拉取指定区块内所有 Uniswap V2/V3 Swap 事件并解析"""
+        """Fetch all Uniswap V2/V3 Swap events in a given block and parse them."""
         swaps: List[SwapRecord] = []
 
-        # 同时查询 V2 和 V3 的 Swap 事件
+        # Query both V2 and V3 Swap events simultaneously
         filter_params = {
             "fromBlock": block_number,
             "toBlock": block_number,
@@ -162,13 +162,13 @@ class MEVAnalyzer:
         try:
             logs: List[LogReceipt] = self.w3.eth.get_logs(filter_params)
         except Exception as e:
-            logger.error("拉取区块 %d 日志失败: %s", block_number, e)
+            logger.error("Failed to fetch logs for block %d: %s", block_number, e)
             return swaps
 
         if not logs:
             return swaps
 
-        # 并行预热所有唯一交易对的 token0/token1（避免逐个同步调用拖慢速度）
+        # Parallel prefetch of token0/token1 for all unique pairs (avoids slow sequential calls)
         unique_pairs = list({log["address"].lower() for log in logs})
         self._prefetch_pair_tokens(unique_pairs)
 
@@ -184,14 +184,14 @@ class MEVAnalyzer:
                 if rec is not None:
                     swaps.append(rec)
             except Exception as e:
-                logger.debug("解析 swap 日志失败: %s", e)
+                logger.debug("Failed to parse swap log: %s", e)
                 continue
 
-        logger.debug("区块 %d 解析到 %d 笔 swap", block_number, len(swaps))
+        logger.debug("Block %d: parsed %d swaps", block_number, len(swaps))
         return swaps
 
     def _prefetch_pair_tokens(self, pairs: List[str]) -> None:
-        """并行获取多个交易对的 token0/token1，填充缓存"""
+        """Fetch token0/token1 for multiple pairs in parallel, populating the cache."""
         missing = [p for p in pairs if p.lower() not in self._pair_tokens]
         if not missing:
             return
@@ -209,9 +209,9 @@ class MEVAnalyzer:
                     pass
 
     def _parse_v2_swap(self, log: LogReceipt) -> Optional[SwapRecord]:
-        """解析 Uniswap V2 Swap 事件"""
+        """Parse a Uniswap V2 Swap event."""
         data = log["data"]
-        # amount0In, amount1In, amount0Out, amount1Out 各 32 字节
+        # amount0In, amount1In, amount0Out, amount1Out — each 32 bytes
         if len(data) < 128:
             return None
         amount0_in = int.from_bytes(data[0:32], "big")
@@ -224,7 +224,7 @@ class MEVAnalyzer:
         if not token0 or not token1:
             return None
 
-        # 判断哪个是 WETH，并分类买卖
+        # Determine which token is WETH and classify buy/sell
         if token1 == self.weth:
             weth_in = amount1_in
             weth_out = amount1_out
@@ -236,14 +236,14 @@ class MEVAnalyzer:
             token_in_addr = token1 if amount1_in > 0 else token0
             token_out_addr = token0 if amount0_out > 0 else token1
         else:
-            # 非 WETH 交易对，跳过
+            # Non-WETH pair, skip
             return None
 
-        is_buy = weth_in > 0  # 输入 WETH = 买入目标代币
+        is_buy = weth_in > 0  # WETH input = buying target token
         amount_in = weth_in if is_buy else (amount0_in if token0 != self.weth else amount1_in)
         amount_out = (amount0_out if token0 != self.weth else amount1_out) if is_buy else weth_out
 
-        # to 地址在 topics[2]
+        # to address is in topics[2]
         to_addr = self._to_addr(log["topics"][2].hex())
 
         return SwapRecord(
@@ -260,7 +260,7 @@ class MEVAnalyzer:
         )
 
     def _parse_v3_swap(self, log: LogReceipt) -> Optional[SwapRecord]:
-        """解析 Uniswap V3 Swap 事件"""
+        """Parse a Uniswap V3 Swap event."""
         data = log["data"]
         # amount0 (int256), amount1 (int256), sqrtPriceX96, liquidity, tick
         if len(data) < 160:
@@ -273,7 +273,7 @@ class MEVAnalyzer:
         if not token0 or not token1:
             return None
 
-        # V3: 正数表示池子收入（用户支出），负数表示池子支出（用户收入）
+        # V3: positive = pool receives (user pays), negative = pool sends (user receives)
         if token1 == self.weth:
             weth_amount = amount1
             token_amount = amount0
@@ -283,11 +283,11 @@ class MEVAnalyzer:
         else:
             return None
 
-        # weth_amount < 0 表示用户收到 WETH（卖出目标代币）
-        # weth_amount > 0 表示用户支付 WETH（买入目标代币）
+        # weth_amount < 0 means user received WETH (selling target token)
+        # weth_amount > 0 means user paid WETH (buying target token)
         is_buy = weth_amount > 0
 
-        # recipient 在 topics[2]
+        # recipient is in topics[2]
         recipient = self._to_addr(log["topics"][2].hex())
 
         return SwapRecord(
@@ -304,26 +304,26 @@ class MEVAnalyzer:
         )
 
     # ------------------------------------------------------------------
-    # 夹子攻击检测
+    # Sandwich attack detection
     # ------------------------------------------------------------------
     def detect_sandwiches(self, swaps: List[SwapRecord]) -> List[SandwichReport]:
         """
-        检测夹子攻击：
-        同一交易对、同一区块内，同一地址先 Buy（前跑）再 Sell（后跑），
-        且两者之间存在受害者交易。
+        Detect sandwich attacks:
+        Same pair, same block, same address does Buy (front-run) then Sell (back-run),
+        with a victim transaction in between.
         """
         reports: List[SandwichReport] = []
 
-        # 按交易对分组
+        # Group by pair
         by_pair: Dict[str, List[SwapRecord]] = {}
         for s in swaps:
             by_pair.setdefault(s.pair, []).append(s)
 
         for pair, pair_swaps in by_pair.items():
-            # 按 log_index 排序（区块内执行顺序）
+            # Sort by log_index (execution order within block)
             pair_swaps.sort(key=lambda x: x.log_index)
 
-            # 按交易者分组
+            # Group by trader
             by_trader: Dict[str, List[SwapRecord]] = {}
             for s in pair_swaps:
                 by_trader.setdefault(s.trader, []).append(s)
@@ -338,7 +338,7 @@ class MEVAnalyzer:
                     for sell in sells:
                         if sell.log_index <= buy.log_index:
                             continue
-                        # 寻找 buy 与 sell 之间的受害者交易
+                        # Find victim transactions between front-run and back-run
                         victims = [
                             s for s in pair_swaps
                             if buy.log_index < s.log_index < sell.log_index
@@ -347,26 +347,26 @@ class MEVAnalyzer:
                         if not victims:
                             continue
 
-                        # 取中间最大的一笔作为主要受害者
+                        # Take the largest intermediate trade as the primary victim
                         victim = max(victims, key=lambda v: v.amount_in)
 
-                        # 计算攻击者利润（WETH 单位）
+                        # Calculate attacker profit (in WETH units)
                         profit_raw = sell.amount_out - buy.amount_in
                         profit_eth = profit_raw / 1e18
 
                         if profit_eth <= 0:
-                            continue  # 无利润则不是有效夹子
+                            continue  # No profit = not a valid sandwich
 
-                        # 代币信息
+                        # Token info
                         token_addr = buy.token_out
                         symbol, decimals = self._get_token_info(token_addr)
                         token_amount = victim.amount_out / (10 ** decimals) if victim.is_buy else victim.amount_in / (10 ** decimals)
 
-                        # 受害者损失估算 ≈ 攻击者利润（简化模型）
-                        victim_loss = profit_eth * 0.9  # 扣除大约手续费后的净损失
+                        # Victim loss estimate ≈ attacker profit (simplified model)
+                        victim_loss = profit_eth * 0.9  # Net loss after gas fees
 
                         report = SandwichReport(
-                            block_number=0,  # 由调用方填充
+                            block_number=0,  # Filled by caller
                             victim_tx=victim.tx_hash,
                             attacker=attacker,
                             pair=pair,
@@ -383,6 +383,6 @@ class MEVAnalyzer:
                             token_address=token_addr,
                         )
                         reports.append(report)
-                        break  # 每个 buy 只匹配最早的 sell
+                        break  # Each buy only matches the earliest sell
 
         return reports

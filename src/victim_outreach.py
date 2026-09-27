@@ -1,11 +1,11 @@
 """
-受害者触达模块
---------------
-当检测到夹子攻击时：
-1. 提取受害者钱包地址
-2. 反查 ENS 名称
-3. 查找 Web3 社交账号（Farcaster / Lens / ENS text records）
-4. 通过可用渠道（ntfy / Telegram）将诊断报告推送给受害者
+Victim Outreach Module
+----------------------
+When a sandwich attack is detected:
+1. Extract the victim's wallet address
+2. Reverse-lookup ENS name
+3. Search for Web3 social accounts (Farcaster / Lens / ENS text records)
+4. Push the diagnostic report to the victim via available channels (ntfy / Telegram)
 """
 from __future__ import annotations
 
@@ -17,23 +17,25 @@ from typing import Any, Dict, Optional
 import requests
 from web3 import Web3
 
+from .i18n import t, bi
+
 logger = logging.getLogger(__name__)
 
 
 class VictimOutreach:
-    """受害者自动识别与触达"""
+    """Automatic victim identification and outreach."""
 
-    # ENS Registry 合约地址（以太坊主网）
+    # ENS Registry contract address (Ethereum mainnet)
     ENS_REGISTRY = "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e"
 
-    # ENS Registry ABI（仅 resolver 函数）
+    # ENS Registry ABI (resolver function only)
     ENS_REGISTRY_ABI = [
         {"constant": True, "inputs": [{"name": "node", "type": "bytes32"}],
          "name": "resolver", "outputs": [{"name": "", "type": "address"}],
          "type": "function"},
     ]
 
-    # ENS Resolver ABI（name + text 函数）
+    # ENS Resolver ABI (name + text functions)
     ENS_RESOLVER_ABI = [
         {"constant": True, "inputs": [{"name": "node", "type": "bytes32"}],
          "name": "name", "outputs": [{"name": "", "type": "string"}],
@@ -58,9 +60,9 @@ class VictimOutreach:
                     address=Web3.to_checksum_address(self.ENS_REGISTRY),
                     abi=self.ENS_REGISTRY_ABI,
                 )
-                logger.info("ENS 反解模块已加载（原生合约调用）")
+                logger.info("ENS reverse-lookup module loaded (native contract calls)")
             except Exception as e:
-                logger.warning("ENS 合约初始化失败: %s", e)
+                logger.warning("ENS contract initialization failed: %s", e)
 
     @staticmethod
     def _proxies() -> Optional[dict]:
@@ -70,7 +72,7 @@ class VictimOutreach:
 
     @staticmethod
     def _namehash(name: str) -> bytes:
-        """计算 ENS namehash"""
+        """Compute ENS namehash."""
         if not name:
             return b'\x00' * 32
         labels = name.split(".")
@@ -82,16 +84,16 @@ class VictimOutreach:
 
     @staticmethod
     def _reverse_node(address: str) -> bytes:
-        """计算地址的反向解析 node"""
+        """Compute the reverse-lookup node for an address."""
         addr_lower = address.lower().replace("0x", "")
         reverse_name = f"{addr_lower}.addr.reverse"
         return VictimOutreach._namehash(reverse_name)
 
     # ------------------------------------------------------------------
-    # ENS 反解
+    # ENS Reverse Lookup
     # ------------------------------------------------------------------
     def resolve_ens(self, address: str) -> Optional[str]:
-        """通过 ENS Registry 合约反查 ENS 名称（地址 → name）"""
+        """Reverse-lookup ENS name via ENS Registry contract (address -> name)."""
         if self._ens_registry is None or self.w3 is None:
             return None
         try:
@@ -106,17 +108,17 @@ class VictimOutreach:
             )
             name = resolver.functions.name(node).call()
             if name:
-                logger.info("ENS 反解: %s → %s", address[:10] + "...", name)
+                logger.info("ENS reverse lookup: %s -> %s", address[:10] + "...", name)
                 return name
         except Exception as e:
-            logger.debug("ENS 反解失败 %s: %s", address[:10] + "...", e)
+            logger.debug("ENS reverse lookup failed for %s: %s", address[:10] + "...", e)
         return None
 
     # ------------------------------------------------------------------
-    # ENS text records（社交账号）
+    # ENS text records (social accounts)
     # ------------------------------------------------------------------
     def get_ens_text_records(self, ens_name: str) -> Dict[str, str]:
-        """读取 ENS 的 text records（Twitter, GitHub, Farcaster 等）"""
+        """Read ENS text records (Twitter, GitHub, Farcaster, etc.)."""
         if self._ens_registry is None or self.w3 is None:
             return {}
         records: Dict[str, str] = {}
@@ -139,14 +141,14 @@ class VictimOutreach:
                 except Exception:
                     continue
         except Exception as e:
-            logger.debug("ENS text records 读取失败: %s", e)
+            logger.debug("Failed to read ENS text records: %s", e)
         return records
 
     # ------------------------------------------------------------------
-    # Farcaster 查找（需要 Neynar API key）
+    # Farcaster lookup (requires Neynar API key)
     # ------------------------------------------------------------------
     def lookup_farcaster(self, address: str) -> Optional[Dict[str, Any]]:
-        """通过 Neynar API 查找 Farcaster 资料（需 API key）"""
+        """Look up Farcaster profile via Neynar API (requires API key)."""
         if not self.neynar_api_key:
             return None
         try:
@@ -168,21 +170,21 @@ class VictimOutreach:
                         "profile_url": f"https://warpcast.com/{user.get('username', '')}",
                     }
         except Exception as e:
-            logger.debug("Farcaster 查找失败: %s", e)
+            logger.debug("Farcaster lookup failed: %s", e)
         return None
 
     # ------------------------------------------------------------------
-    # Lens Protocol 查找
+    # Lens Protocol lookup
     # ------------------------------------------------------------------
     def lookup_lens(self, address: str) -> Optional[Dict[str, Any]]:
-        """通过 Lens GraphQL 查找 Lens 资料"""
+        """Look up Lens profile via Lens GraphQL API."""
         try:
             query = """
                 query {
                     defaultProfile(request: { address: "%s" }) {
                         id
-                        handle { localName } 
-                        metadata { displayName }
+                        handle { localName }
+                        metadata { DisplayName }
                     }
                 }
             """ % address
@@ -192,7 +194,6 @@ class VictimOutreach:
                 timeout=8, proxies=self._proxies(),
             )
             if resp.status_code == 200:
-                # Lens v2 returns JSON if the endpoint is correct
                 data = resp.json()
                 profile = data.get("data", {}).get("defaultProfile")
                 if profile:
@@ -204,14 +205,14 @@ class VictimOutreach:
                         "profile_url": f"https://hey.xyz/u/{local_name}",
                     }
         except Exception as e:
-            logger.debug("Lens 查找失败: %s", e)
+            logger.debug("Lens lookup failed: %s", e)
         return None
 
     # ------------------------------------------------------------------
-    # 综合查找
+    # Comprehensive lookup
     # ------------------------------------------------------------------
     def identify_victim(self, address: str) -> Dict[str, Any]:
-        """综合查找受害者的链上身份信息"""
+        """Comprehensive lookup of victim's on-chain identity information."""
         info: Dict[str, Any] = {
             "address": address,
             "ens_name": None,
@@ -219,15 +220,15 @@ class VictimOutreach:
             "ens_text_records": {},
         }
 
-        # 1. ENS 反解
+        # 1. ENS reverse lookup
         ens_name = self.resolve_ens(address)
         if ens_name:
             info["ens_name"] = ens_name
-            # 2. 读取 ENS text records
+            # 2. Read ENS text records
             records = self.get_ens_text_records(ens_name)
             if records:
                 info["ens_text_records"] = records
-                # 映射到社交账号
+                # Map to social accounts
                 mapping = {
                     "com.twitter": ("twitter", "https://twitter.com/"),
                     "com.github": ("github", "https://github.com/"),
@@ -244,7 +245,7 @@ class VictimOutreach:
                             "url": f"{url_prefix}{val}" if url_prefix else val,
                         })
 
-        # 3. Farcaster（需要 API key）
+        # 3. Farcaster (requires API key)
         fc = self.lookup_farcaster(address)
         if fc:
             info["social_accounts"].append(fc)
@@ -257,7 +258,7 @@ class VictimOutreach:
         return info
 
     # ------------------------------------------------------------------
-    # 生成触达消息
+    # Generate outreach message
     # ------------------------------------------------------------------
     @staticmethod
     def format_outreach_message(
@@ -265,33 +266,36 @@ class VictimOutreach:
         report_url: str,
         report: Any,
     ) -> str:
-        """生成发送给受害者的触达消息"""
+        """Generate a bilingual outreach message for the victim."""
         ens = victim_info.get("ens_name") or ""
         addr = victim_info["address"]
         label = f"{ens} ({addr[:10]}...)" if ens else f"{addr[:10]}...{addr[-6:]}"
 
         lines = [
-            f"📢 致 {label}",
+            f"📢 {t('zh', 'outreach.to')} {label} / {t('en', 'outreach.to')} {label}",
             "",
-            "我们检测到您的一笔链上交易疑似遭遇 MEV 夹子攻击（Sandwich Attack）。",
-            "以下是诊断报告摘要：",
+            f"{t('zh', 'outreach.detected')}",
+            f"{t('en', 'outreach.detected')}",
             "",
-            f"🔗 交易: {report.victim_tx[:20]}...",
-            f"💰 估计损失: {report.victim_loss_native} {report.native_symbol}",
-            f"🕵️ 攻击者: {report.attacker[:20]}...",
+            f"{t('zh', 'outreach.report_summary')} / {t('en', 'outreach.report_summary')}",
             "",
-            f"📋 完整诊断报告: {report_url}",
+            f"🔗 {bi('outreach.tx')}: {report.victim_tx[:20]}...",
+            f"💰 {bi('outreach.estimated_loss')}: {report.victim_loss_native} {report.native_symbol}",
+            f"🕵️ {bi('outreach.attacker')}: {report.attacker[:20]}...",
             "",
-            "建议您检查该交易，并采取以下防护措施：",
-            "1. 使用 Flashbots Protect / MEV-Share 提交隐私交易",
-            "2. 降低滑点容忍度至 < 0.5%",
-            "3. 大额交易拆分多笔执行",
+            f"📋 {bi('outreach.full_report')}: {report_url}",
+            "",
+            f"{t('zh', 'outreach.recommendations')}",
+            f"{t('en', 'outreach.recommendations')}",
+            f"1. {bi('outreach.rec_1')}",
+            f"2. {bi('outreach.rec_2')}",
+            f"3. {bi('outreach.rec_3')}",
         ]
 
         socials = victim_info.get("social_accounts", [])
         if socials:
             lines.append("")
-            lines.append("📱 您的社交账号已通过链上身份验证：")
+            lines.append(f"📱 {bi('outreach.social_verified')}")
             for s in socials:
                 lines.append(f"  - {s['platform']}: @{s.get('handle', '')}")
 

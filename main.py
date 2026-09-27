@@ -1,11 +1,11 @@
 """
-MEV 链上受害者诊断与自动触达系统
-================================
-主入口：连接 RPC → 监听新区块 → 诊断夹子攻击 →
-        提取受害者地址 → 查找 Web3 社交账号 →
-        生成 HTML 报告 → 多渠道推送 → 订阅者通知
+MEV On-Chain Victim Diagnostic & Auto-Outreach System
+=====================================================
+Main entry point: Connect RPC -> Listen for new blocks -> Detect sandwich attacks ->
+Extract victim address -> Lookup Web3 social accounts ->
+Generate HTML report -> Multi-channel push -> Subscriber notifications
 
-用法：
+Usage:
     python main.py
 """
 from __future__ import annotations
@@ -29,9 +29,10 @@ from src.tg_bot import (
 from src.report_generator import generate_report_html
 from src.subscription_manager import SubscriptionManager
 from src.victim_outreach import VictimOutreach
+from src.i18n import t, bi, get_subscriber_message
 
 # ---------------------------------------------------------------------------
-# 日志配置
+# Logging configuration
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +47,7 @@ REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 
 
 # ---------------------------------------------------------------------------
-# 配置加载
+# Configuration loading
 # ---------------------------------------------------------------------------
 def load_config() -> dict:
     load_dotenv()
@@ -69,7 +70,7 @@ def load_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 连接 Web3（带重试）
+# Connect to Web3 (with retry)
 # ---------------------------------------------------------------------------
 def connect_w3(rpc_url: str, max_retries: int = 5) -> Web3:
     for attempt in range(1, max_retries + 1):
@@ -81,18 +82,18 @@ def connect_w3(rpc_url: str, max_retries: int = 5) -> Web3:
                     rpc_url, request_kwargs={"timeout": 30}))
             if w3.is_connected():
                 return w3
-            logger.warning("RPC 连接未就绪（尝试 %d/%d）", attempt, max_retries)
+            logger.warning("RPC not ready (attempt %d/%d)", attempt, max_retries)
         except Exception as e:
-            logger.warning("RPC 连接失败（尝试 %d/%d）: %s",
+            logger.warning("RPC connection failed (attempt %d/%d): %s",
                            attempt, max_retries, e)
         if attempt < max_retries:
             time.sleep(min(2 ** attempt, 10))
     raise ConnectionError(
-        f"无法连接 RPC 节点（重试 {max_retries} 次后失败）: {rpc_url}")
+        f"Failed to connect to RPC node after {max_retries} retries: {rpc_url}")
 
 
 # ---------------------------------------------------------------------------
-# 本地保存检测结果
+# Save detection results locally
 # ---------------------------------------------------------------------------
 def save_detection(report, chain: str, victim_info: dict = None) -> None:
     os.makedirs(DETECTIONS_DIR, exist_ok=True)
@@ -122,16 +123,16 @@ def save_detection(report, chain: str, victim_info: dict = None) -> None:
             data["victim_identity"] = victim_info
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info("检测结果已保存: %s", filepath)
+        logger.info("Detection saved: %s", filepath)
     except Exception as e:
-        logger.error("保存检测结果失败: %s", e)
+        logger.error("Failed to save detection: %s", e)
 
 
 # ---------------------------------------------------------------------------
-# 报告 HTTP 服务器（提供 HTML 报告链接）
+# Report HTTP server (serves HTML report links)
 # ---------------------------------------------------------------------------
 def start_report_server(port: int) -> threading.Thread:
-    """启动一个简单的 HTTP 服务器来提供 HTML 报告"""
+    """Start a simple HTTP server to serve HTML reports."""
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
     class ReportHandler(SimpleHTTPRequestHandler):
@@ -140,7 +141,7 @@ def start_report_server(port: int) -> threading.Thread:
 
     def _serve():
         server = HTTPServer(("0.0.0.0", port), ReportHandler)
-        logger.info("报告 HTTP 服务器已启动: http://localhost:%d", port)
+        logger.info("Report HTTP server started: http://localhost:%d", port)
         server.serve_forever()
 
     t = threading.Thread(target=_serve, daemon=True)
@@ -149,19 +150,19 @@ def start_report_server(port: int) -> threading.Thread:
 
 
 # ---------------------------------------------------------------------------
-# Telegram 命令处理线程
+# Telegram command handler thread
 # ---------------------------------------------------------------------------
 def start_telegram_command_poller(cmd_handler: TelegramCommandHandler):
-    """在后台线程中轮询 Telegram getUpdates"""
+    """Poll Telegram getUpdates in a background thread."""
     def _poll():
-        logger.info("Telegram 命令处理器已启动（长轮询）")
+        logger.info("Telegram command handler started (long-polling)")
         while True:
             try:
                 messages = cmd_handler.poll_once()
                 for msg in messages:
                     cmd_handler.handle_message(msg)
             except Exception as e:
-                logger.debug("Telegram 命令轮询异常: %s", e)
+                logger.debug("Telegram command polling error: %s", e)
                 time.sleep(5)
 
     t = threading.Thread(target=_poll, daemon=True)
@@ -170,7 +171,7 @@ def start_telegram_command_poller(cmd_handler: TelegramCommandHandler):
 
 
 # ---------------------------------------------------------------------------
-# 处理单个区块
+# Process a single block
 # ---------------------------------------------------------------------------
 def process_block(
     analyzer: MEVAnalyzer,
@@ -181,41 +182,41 @@ def process_block(
     outreach: VictimOutreach,
     report_base_url: str = "",
 ) -> None:
-    """处理单个区块：拉取 swap → 检测夹子 → 受害者识别 → 生成报告 → 推送"""
+    """Process a single block: fetch swaps -> detect sandwiches -> victim identification -> generate report -> push."""
     try:
         swaps = analyzer.fetch_swaps(block_num)
         if not swaps:
-            logger.debug("区块 #%d 无 swap 事件", block_num)
+            logger.debug("Block #%d: no swap events", block_num)
             return
 
         reports = analyzer.detect_sandwiches(swaps)
         if not reports:
-            logger.info("扫描区块 #%d | %d 笔 swap | 未发现夹子攻击",
+            logger.info("Scanned block #%d | %d swaps | no sandwich attacks detected",
                         block_num, len(swaps))
             return
 
-        logger.info("🚨 区块 #%d 检测到 %d 起夹子攻击！（%d 笔 swap）",
+        logger.info("Block #%d: %d sandwich attack(s) detected! (%d swaps)",
                     block_num, len(reports), len(swaps))
 
         for r in reports:
             r.block_number = block_num
             sub_manager.increment_stat("attacks_detected")
 
-            # 1. 受害者身份识别（ENS + Web3 社交）
+            # 1. Victim identity identification (ENS + Web3 social)
             victim_info = None
             if r.victim_address:
-                logger.info("正在识别受害者: %s...",
+                logger.info("Identifying victim: %s...",
                             r.victim_address[:12])
                 victim_info = outreach.identify_victim(r.victim_address)
                 if victim_info.get("ens_name"):
-                    logger.info("受害者 ENS: %s",
+                    logger.info("Victim ENS: %s",
                                 victim_info["ens_name"])
                 socials = victim_info.get("social_accounts", [])
                 if socials:
-                    logger.info("受害者社交账号: %s",
+                    logger.info("Victim social accounts: %s",
                                 [s["platform"] for s in socials])
 
-            # 2. 生成 HTML 诊断报告
+            # 2. Generate HTML diagnostic report
             eth_price = TelegramNotifier.get_native_price_usd(
                 r.native_symbol)
             report_path = generate_report_html(
@@ -227,79 +228,69 @@ def process_block(
                 report_filename = os.path.basename(report_path)
                 report_url = f"{report_base_url}/{report_filename}"
 
-            # 3. 保存检测 JSON（含受害者身份）
+            # 3. Save detection JSON (including victim identity)
             save_detection(r, chain, victim_info)
 
-            # 4. 公共广播（ntfy + Telegram 频道，带双语卡片+诊断报告按钮）
+            # 4. Public broadcast (ntfy + Telegram channel, with bilingual card + report buttons)
             notifier.send(r, report_url)
 
-            # 5. 订阅者定向通知
+            # 5. Subscriber targeted notifications
             if r.victim_address:
                 subs = sub_manager.find_subscribers(r.victim_address)
                 if subs:
-                    logger.info("找到 %d 个订阅者", len(subs))
+                    logger.info("Found %d subscriber(s)", len(subs))
                     for sub in subs:
                         chat_id = sub["chat_id"]
-                        if report_url:
-                            msg = (
-                                f"🚨 *检测到你的钱包被夹！*\n"
-                                f"地址: `{r.victim_address[:10]}...`\n"
-                                f"损失: {r.victim_loss_native} "
-                                f"{r.native_symbol}\n"
-                                f"📋 [查看完整报告]({report_url})"
-                            )
-                        else:
-                            msg = notifier.telegram.format_report(
-                                r, eth_price) if notifier.telegram else ""
+                        msg = get_subscriber_message("en", r, report_url)
                         if notifier.telegram:
                             notifier.telegram.send_to_chat(chat_id, msg)
 
-                # 也检查 ENS 名称匹配
+                # Also check ENS name matching
                 if victim_info and victim_info.get("ens_name"):
                     ens_subs = sub_manager.find_subscribers_by_ens(
                         victim_info["ens_name"])
                     for sub in ens_subs:
-                        if sub not in subs:  # 避免重复
+                        if sub not in subs:  # Avoid duplicates
                             chat_id = sub["chat_id"]
                             msg = (
-                                f"🚨 *检测到 {victim_info['ens_name']} "
-                                f"被夹！*\n"
-                                f"损失: {r.victim_loss_native} "
-                                f"{r.native_symbol}"
+                                f"🚨 *{t('zh', 'main.subscriber_ens_alert')}* "
+                                f"*{victim_info['ens_name']}*\n"
+                                f"{bi('main.subscriber_loss')}: "
+                                f"{r.victim_loss_native} {r.native_symbol}"
                             )
                             if notifier.telegram:
                                 notifier.telegram.send_to_chat(chat_id, msg)
 
     except Exception as e:
-        logger.error("处理区块 #%d 失败: %s", block_num, e)
+        logger.error("Failed to process block #%d: %s", block_num, e)
 
 
 # ---------------------------------------------------------------------------
-# 主循环
+# Main loop
 # ---------------------------------------------------------------------------
 def run() -> None:
     config = load_config()
 
     if not config["rpc_url"]:
-        logger.error("缺少 RPC_URL 配置，请检查 .env")
+        logger.error("Missing RPC_URL configuration, please check .env")
         sys.exit(1)
 
     has_telegram = bool(config["bot_token"] and config["chat_id"])
     has_ntfy = bool(config["ntfy_topic"])
     if not (has_telegram or has_ntfy):
-        logger.error("至少需要配置一个通知渠道 (Telegram 或 ntfy)")
+        logger.error("At least one notification channel required (Telegram or ntfy)")
         sys.exit(1)
 
-    # ---- 连接 RPC ----
-    logger.info("正在连接以太坊 RPC: %s", config["rpc_url"])
+    # ---- Connect to RPC ----
+    logger.info("Connecting to Ethereum RPC: %s", config["rpc_url"])
     w3 = connect_w3(config["rpc_url"])
     chain_id = w3.eth.chain_id
-    logger.info("连接成功 | ChainID=%s | 当前区块 #%s",
+    logger.info("Connected | ChainID=%s | Current block #%s",
                 chain_id, w3.eth.block_number)
 
     analyzer = MEVAnalyzer(w3, chain="ethereum")
 
-    # ---- 初始化通知器 ----
+    # ---- Initialize notifiers ----
     tg = TelegramNotifier(
         config["bot_token"], config["chat_id"],
         api_base=config["telegram_api_base"],
@@ -316,30 +307,30 @@ def run() -> None:
         channels.append("Telegram")
     if ntfy:
         channels.append(f"ntfy({config['ntfy_topic']})")
-    logger.info("通知渠道: %s", " + ".join(channels))
+    logger.info("Notification channels: %s", " + ".join(channels))
 
-    # ---- 初始化订阅管理器 ----
+    # ---- Initialize subscription manager ----
     sub_manager = SubscriptionManager()
-    logger.info("订阅管理器已就绪（SQLite: %s）", sub_manager.db_path)
+    logger.info("Subscription manager ready (SQLite: %s)", sub_manager.db_path)
 
-    # ---- 初始化受害者触达模块 ----
+    # ---- Initialize victim outreach module ----
     outreach = VictimOutreach(
         w3=w3,
         neynar_api_key=config["neynar_api_key"],
     )
-    logger.info("受害者触达模块已就绪（ENS: %s, Farcaster: %s, Lens: %s）",
-                "✅" if outreach._ens_registry else "❌",
-                "✅" if config["neynar_api_key"] else "❌",
-                "✅")
+    logger.info("Victim outreach module ready (ENS: %s, Farcaster: %s, Lens: %s)",
+                "yes" if outreach._ens_registry else "no",
+                "yes" if config["neynar_api_key"] else "no",
+                "yes")
 
-    # ---- 启动报告 HTTP 服务器 ----
+    # ---- Start report HTTP server ----
     report_base_url = config["report_base_url"]
     if not report_base_url:
         start_report_server(config["http_port"])
         report_base_url = f"http://localhost:{config['http_port']}"
-        logger.info("报告访问地址: %s", report_base_url)
+        logger.info("Report URL: %s", report_base_url)
 
-    # ---- 启动 Telegram 命令处理 ----
+    # ---- Start Telegram command handler ----
     if has_telegram:
         cmd_handler = TelegramCommandHandler(
             bot_token=config["bot_token"],
@@ -347,45 +338,45 @@ def run() -> None:
             sub_manager=sub_manager,
             ens_resolver=outreach,
         )
-        # 复用 TelegramNotifier 获取的 bot_username（避免重复 API 调用）
+        # Reuse TelegramNotifier's bot_username (avoid duplicate API call)
         if tg and tg.bot_username:
             cmd_handler.bot_username = tg.bot_username
         start_telegram_command_poller(cmd_handler)
 
-    # ---- 启动通知 ----
+    # ---- Startup notification ----
     notifier.send_text(
-        "🤖 *MEV 夹子攻击诊断系统已启动*\n"
-        f"网络：以太坊主网\n"
-        f"当前区块：`#{w3.eth.block_number}`\n"
-        f"通知渠道：{', '.join(channels)}\n"
-        f"受害者触达：ENS反解 + Web3社交\n"
-        f"订阅系统：已就绪 (/watch)\n"
-        f"报告服务：{report_base_url}\n"
-        "正在实时监听新区块..."
+        f"🤖 *{t('zh', 'main.startup_title')} / {t('en', 'main.startup_title')}*\n"
+        f"{t('zh', 'main.startup_network')}\n"
+        f"{t('en', 'main.startup_block')}: `#{w3.eth.block_number}`\n"
+        f"{bi('main.startup_channels')}: {', '.join(channels)}\n"
+        f"{t('zh', 'main.startup_outreach')}\n"
+        f"{t('zh', 'main.startup_subscriptions')}\n"
+        f"{bi('main.startup_report_service')}: {report_base_url}\n"
+        f"{t('en', 'main.startup_listening')}"
     )
 
     last_block = w3.eth.block_number
-    logger.info("正在监听新区块...（起始区块 #%d）", last_block)
+    logger.info("Listening for new blocks... (start block #%d)", last_block)
 
-    # ---- 可选：BSC ----
+    # ---- Optional: BSC ----
     bsc_analyzer = None
     if config["scan_bsc"] and config["bsc_rpc_url"]:
         try:
             w3_bsc = connect_w3(config["bsc_rpc_url"])
             bsc_analyzer = MEVAnalyzer(w3_bsc, chain="bsc")
-            logger.info("BSC 监听已启用，当前区块 #%s",
+            logger.info("BSC monitoring enabled, current block #%s",
                         w3_bsc.eth.block_number)
         except Exception as e:
-            logger.warning("BSC 连接失败，跳过: %s", e)
+            logger.warning("BSC connection failed, skipping: %s", e)
 
-    # ---- 轮询主循环 ----
+    # ---- Main polling loop ----
     while True:
         try:
             if not w3.is_connected():
-                logger.warning("RPC 连接断开，尝试重连...")
+                logger.warning("RPC connection lost, attempting reconnect...")
                 w3 = connect_w3(config["rpc_url"])
                 analyzer = MEVAnalyzer(w3, chain="ethereum")
-                logger.info("RPC 重连成功 | 当前区块 #%s",
+                logger.info("RPC reconnected | current block #%s",
                             w3.eth.block_number)
 
             current = w3.eth.block_number
@@ -408,10 +399,10 @@ def run() -> None:
                             sub_manager, outreach, report_base_url,
                         )
                 except Exception as e:
-                    logger.debug("BSC 轮询异常: %s", e)
+                    logger.debug("BSC polling error: %s", e)
 
         except Exception as e:
-            logger.error("主循环异常: %s", e)
+            logger.error("Main loop exception: %s", e)
             time.sleep(5)
 
         time.sleep(config["poll_interval"])
