@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 环境 & 密钥
+.env
+*.db
+
+# 运行时生成的数据
+detections/
+reports/
