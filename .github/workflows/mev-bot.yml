@@ -1,9 +1,10 @@
 name: MEV Sandwich Bot (24/7)
 
 on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:        # Manual trigger
+  schedule:
+    # Run once daily at 12:00 UTC, covers UTC 12:00-18:00 (peak trading hours)
+    - cron: "0 12 * * *"
+  workflow_dispatch:        # Manual trigger (on-demand)
 
 jobs:
   run-bot:
