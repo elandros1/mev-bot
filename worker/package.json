@@ -1,0 +1,20 @@
+{
+  "name": "mev-sandwich-worker",
+  "version": "1.0.0",
+  "description": "MEV sandwich attack detection & victim outreach bot — Cloudflare Workers edition",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "ethers": "^6.13.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^3.78.0"
+  }
+}

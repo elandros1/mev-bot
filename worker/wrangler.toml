@@ -1,0 +1,43 @@
+name = "mev-sandwich-bot"
+main = "src/index.ts"
+compatibility_date = "2024-09-09"
+compatibility_flags = ["nodejs_compat"]
+account_id = "90f98f126845727b903f278b3d3583d6"
+
+# Cron Triggers: schedule detection runs.
+# Cloudflare's minimum cron granularity is 1 minute.
+# Use "* * * * *" for every minute, "*/15 * * * *" for every 15 minutes.
+[triggers]
+crons = ["* * * * *"]
+
+# Durable Object binding: holds the block cursor + subscription list.
+# Must be declared before migrations run (wrangler reads this on deploy).
+[[durable_objects.bindings]]
+name = "STATE"
+class_name = "MevState"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MevState"]
+
+# Secrets (set via `wrangler secret put <NAME>` or the Cloudflare dashboard):
+#   RPC_URL              Ethereum JSON-RPC endpoint (HTTPS)
+#   TELEGRAM_BOT_TOKEN   Telegram Bot token (from @BotFather)
+#   TELEGRAM_CHAT_ID     Target chat / channel id
+#   NTFY_TOPIC           ntfy.sh topic name
+#   NEYNAR_API_KEY       Neynar API key (optional; Farcaster lookup)
+#   NEYNAR_SIGNER_UUID   Neynar signer UUID (optional; Farcaster auto-cast)
+#
+# Non-secret vars (set in [vars] below or via dashboard):
+[vars]
+NETWORK = "ethereum"
+NTFY_SERVER = "https://ntfy.private.coffee"
+TELEGRAM_API_BASE = "https://api.telegram.org"
+SCAN_BSC = "false"
+BSC_RPC_URL = "https://bsc-dataseed.binance.org"
+REPORT_BASE_URL = ""
+
+# KV namespace for diagnostics (heartbeat fetch results)
+[[kv_namespaces]]
+binding = "DIAG"
+id = "30332731f7904a9b91330e4e2737edd3"

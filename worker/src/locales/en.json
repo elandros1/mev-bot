@@ -1,0 +1,45 @@
+{
+  "card": {
+    "alert_title": "MEV Sandwich Attack Alert",
+    "block_label": "Block",
+    "network_label": "Network",
+    "network_ethereum": "Ethereum",
+    "network_bsc": "BSC",
+    "victim_label": "Victim",
+    "attacker_label": "Attacker",
+    "token_label": "Token",
+    "profit_label": "Attacker Profit",
+    "loss_label": "Victim Loss",
+    "root_cause_title": "Root Cause",
+    "root_cause_1": "Slippage tolerance set too high",
+    "root_cause_2": "Tx exposed in public mempool",
+    "root_cause_3": "Front-run & back-run by MEV bot",
+    "recommendations_title": "Recommendations",
+    "rec_1": "Use MEV-Share / Flashbots Protect private mempool",
+    "rec_2": "Lower slippage tolerance (< 0.5%)",
+    "rec_3": "Split large trades into smaller batches",
+    "victim_tx_link": "Victim Tx",
+    "attacker_addr_link": "Attacker Addr"
+  },
+  "buttons": {
+    "watch_wallet": "Watch This Wallet",
+    "view_report": "View Report",
+    "victim_tx": "Victim Tx",
+    "attacker": "Attacker",
+    "protection_guide": "MEV Protection Guide"
+  },
+  "outreach": {
+    "to": "To",
+    "detected": "We detected that one of your on-chain transactions may have been hit by a MEV sandwich attack.",
+    "report_summary": "Diagnostic report summary:",
+    "tx": "Transaction",
+    "estimated_loss": "Estimated loss",
+    "attacker": "Attacker",
+    "full_report": "Full diagnostic report",
+    "recommendations": "Recommended actions:",
+    "rec_1": "Use Flashbots Protect / MEV-Share to submit private transactions",
+    "rec_2": "Reduce slippage tolerance to < 0.5%",
+    "rec_3": "Split large trades into multiple transactions",
+    "social_verified": "Your social accounts verified via on-chain identity:"
+  }
+}

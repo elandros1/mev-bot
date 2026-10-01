@@ -5,7 +5,9 @@ When a sandwich attack is detected:
 1. Extract the victim's wallet address
 2. Reverse-lookup ENS name
 3. Search for Web3 social accounts (Farcaster / Lens / ENS text records)
-4. Push the diagnostic report to the victim via available channels (ntfy / Telegram)
+4. Push the diagnostic report to the victim via available channels
+   - Farcaster auto-mention (zero-friction: victim receives a cast without opting in)
+   - ntfy / Telegram (operator-side monitoring)
 """
 from __future__ import annotations
 
@@ -48,9 +50,13 @@ class VictimOutreach:
     ]
 
     def __init__(self, w3=None, neynar_api_key: str = "",
+                 neynar_signer_uuid: str = "",
                  lens_api_url: str = "https://api.lens.dev/graphql"):
         self.w3 = w3
         self.neynar_api_key = neynar_api_key or os.getenv("NEYNAR_API_KEY", "")
+        self.neynar_signer_uuid = (
+            neynar_signer_uuid or os.getenv("NEYNAR_SIGNER_UUID", "")
+        )
         self.lens_api_url = lens_api_url
         self._ens_registry = None
 
@@ -298,3 +304,91 @@ class VictimOutreach:
                 lines.append(f"  - {s['platform']}: @{s.get('handle', '')}")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Farcaster auto-mention (zero-friction victim outreach)
+    # ------------------------------------------------------------------
+    def send_farcaster_cast(self, text: str,
+                            mentions: Optional[list] = None,
+                            embed_url: str = "") -> bool:
+        """Send a cast via the Neynar v2 API.
+
+        Requires both NEYNAR_API_KEY and NEYNAR_SIGNER_UUID to be configured.
+        Returns True on success, False otherwise (missing config or API failure).
+        """
+        if not self.neynar_api_key or not self.neynar_signer_uuid:
+            logger.debug("Farcaster cast skipped: missing NEYNAR_API_KEY "
+                         "or NEYNAR_SIGNER_UUID")
+            return False
+
+        payload: Dict[str, Any] = {
+            "signer_uuid": self.neynar_signer_uuid,
+            "text": text,
+        }
+        if mentions:
+            payload["mentions"] = mentions
+        if embed_url:
+            payload["embeds"] = [{"url": embed_url}]
+
+        try:
+            resp = requests.post(
+                "https://api.neynar.com/v2/farcaster/cast",
+                headers={
+                    "api_key": self.neynar_api_key,
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=10,
+                proxies=self._proxies(),
+            )
+            if resp.status_code == 200:
+                cast_hash = resp.json().get("cast", {}).get("hash", "")
+                logger.info("Farcaster cast sent | hash=%s", cast_hash)
+                return True
+            logger.error("Farcaster cast failed | HTTP %d | %s",
+                         resp.status_code, resp.text[:300])
+            return False
+        except Exception as e:
+            logger.error("Farcaster cast exception: %s", e)
+            return False
+
+    def outreach_to_farcaster(self, victim_info: Dict[str, Any],
+                              report: Any, report_url: str) -> bool:
+        """Auto-mention the victim on Farcaster with a diagnostic summary.
+
+        Looks up the victim's Farcaster account (identified during
+        identify_victim), then posts a public cast mentioning them, so the
+        victim sees the alert next time they open Warpcast — zero opt-in,
+        zero subscription, fully passive outreach.
+        """
+        fc_account = next(
+            (s for s in victim_info.get("social_accounts", [])
+             if s.get("platform") == "farcaster"),
+            None,
+        )
+        if not fc_account:
+            logger.debug("Victim has no Farcaster account; skipping cast")
+            return False
+
+        fid = fc_account.get("fid", 0)
+        username = fc_account.get("username", "")
+        loss_str = f"{report.victim_loss_native:.4f} {report.native_symbol}"
+        attacker_tail = (report.attacker[:6] + "..."
+                         + report.attacker[-4:])
+        tx_tail = report.victim_tx[:10] + "..." + report.victim_tx[-4:]
+
+        # Farcaster cast text limit is 320 characters.
+        text = (
+            f"@{username} you were hit by a MEV sandwich attack.\n"
+            f"Loss: {loss_str} | Attacker: {attacker_tail}\n"
+            f"Victim tx: {tx_tail}\n"
+            f"Diagnostic report below 👇"
+        )
+        if len(text) > 320:
+            text = text[:317] + "..."
+
+        return self.send_farcaster_cast(
+            text=text,
+            mentions=[fid] if fid else None,
+            embed_url=report_url,
+        )

@@ -7,6 +7,7 @@ A fully automated MEV sandwich attack detection system that monitors on-chain DE
 - **Real-time Sandwich Detection** — Monitors Uniswap V2/V3 Swap events on every new block
 - **Victim Address Extraction** — Automatically identifies the sandwiched victim's wallet
 - **Web3 Identity Resolution** — ENS reverse lookup + Farcaster/Lens social account discovery
+- **Zero-Friction Victim Outreach** — Auto-mentions the victim on Farcaster the moment an attack is detected (no opt-in, no subscription — the victim sees the alert next time they open Warpcast)
 - **HTML Diagnostic Reports** — Auto-generated structured report cards with profit/loss analysis
 - **Multi-Channel Push** — Telegram Bot (with inline buttons + Deep Linking) and ntfy.sh
 - **Wallet Subscription** — `/watch <address>` zero-barrier self-service protection
@@ -33,6 +34,7 @@ New Block → Swap Event Parse → Sandwich Detect → Victim Extract
 - An Ethereum RPC endpoint (e.g., [DRPC](https://drpc.org) public node)
 - A Telegram Bot token (from [@BotFather](https://t.me/BotFather))
 - (Optional) [Neynar API key](https://neynar.com) for Farcaster lookups
+- (Optional) A Neynar **signer UUID** (also from Neynar) to enable auto-mentioning victims on Farcaster. Without it, the bot can look up victims but cannot post casts to them.
 
 ### Installation
 
@@ -52,9 +54,10 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 NTFY_TOPIC=mev-sandwich-alerts
 # Optional
-NEYNAR_API_KEY=         # Farcaster lookup
-TELEGRAM_API_BASE=      # Custom proxy for Telegram API
-HTTP_PORT=8080          # Report HTTP server port
+NEYNAR_API_KEY=             # Farcaster profile lookup
+NEYNAR_SIGNER_UUID=         # Farcaster auto-cast (write access)
+TELEGRAM_API_BASE=          # Custom proxy for Telegram API
+HTTP_PORT=8080              # Report HTTP server port
 ```
 
 ### Run

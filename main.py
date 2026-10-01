@@ -64,6 +64,7 @@ def load_config() -> dict:
         "ntfy_topic": os.getenv("NTFY_TOPIC", ""),
         "ntfy_server": os.getenv("NTFY_SERVER", "https://ntfy.sh"),
         "neynar_api_key": os.getenv("NEYNAR_API_KEY", ""),
+        "neynar_signer_uuid": os.getenv("NEYNAR_SIGNER_UUID", ""),
         "report_base_url": os.getenv("REPORT_BASE_URL", ""),
         "http_port": int(os.getenv("HTTP_PORT", "8080")),
     }
@@ -234,7 +235,17 @@ def process_block(
             # 4. Public broadcast (ntfy + Telegram channel, with bilingual card + report buttons)
             notifier.send(r, report_url)
 
-            # 5. Subscriber targeted notifications
+            # 5. Zero-friction victim outreach: auto-mention on Farcaster
+            #    Victim receives the alert next time they open Warpcast,
+            #    no subscription or opt-in required.
+            if victim_info and report_url:
+                try:
+                    outreach.outreach_to_farcaster(
+                        victim_info, r, report_url)
+                except Exception as e:
+                    logger.error("Farcaster outreach failed: %s", e)
+
+            # 6. Subscriber targeted notifications
             if r.victim_address:
                 subs = sub_manager.find_subscribers(r.victim_address)
                 if subs:
@@ -317,10 +328,12 @@ def run() -> None:
     outreach = VictimOutreach(
         w3=w3,
         neynar_api_key=config["neynar_api_key"],
+        neynar_signer_uuid=config["neynar_signer_uuid"],
     )
+    fc_ready = bool(config["neynar_api_key"] and config["neynar_signer_uuid"])
     logger.info("Victim outreach module ready (ENS: %s, Farcaster: %s, Lens: %s)",
                 "yes" if outreach._ens_registry else "no",
-                "yes" if config["neynar_api_key"] else "no",
+                "yes (auto-cast)" if fc_ready else "lookup only",
                 "yes")
 
     # ---- Start report HTTP server ----
